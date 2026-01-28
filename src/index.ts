@@ -11,7 +11,7 @@ import { createStandaloneServer } from './server.js';
 import { runStdioTransport, startHttpTransport } from './transport/index.js';
 
 /**
- * Main entry point for the Avalogica AI Consumer Needs Server
+ * Main entry point for the Avalogica Capture Analysis MCP server.
  *
  * Transport selection logic:
  * 1. --stdio flag forces STDIO transport
@@ -19,26 +19,27 @@ import { runStdioTransport, startHttpTransport } from './transport/index.js';
  * 3. Default: STDIO for local development
  */
 async function main() {
-    try {
-        const config = loadConfig();
-        const cliOptions = parseArgs();
+  try {
+    const config = loadConfig();
+    const cliOptions = parseArgs();
 
-        // Determine transport mode
-        const shouldUseHttp = cliOptions.port || (process.env.PORT && !cliOptions.stdio);
-        const port = cliOptions.port || config.port;
+    // Determine transport mode
+    const shouldUseHttp =
+      Boolean(cliOptions.port) || (Boolean(process.env.PORT) && !cliOptions.stdio);
+    const port = cliOptions.port ?? config.port;
 
-        if (shouldUseHttp) {
-            // HTTP transport for production/cloud deployment
-            startHttpTransport({ ...config, port });
-        } else {
-            // STDIO transport for local development
-            const server = createStandaloneServer();
-            await runStdioTransport(server);
-        }
-    } catch (error) {
-        console.error("Fatal error running Avalogica AI Consumer Needs server:", error);
-        process.exit(1);
+    if (shouldUseHttp) {
+      // HTTP transport for production/cloud deployment
+      startHttpTransport({ ...config, port });
+    } else {
+      // STDIO transport for local development
+      const server = createStandaloneServer();
+      await runStdioTransport(server);
     }
+  } catch (error) {
+    console.error('Fatal error running Avalogica Capture Analysis MCP server:', error);
+    process.exit(1);
+  }
 }
 
 // Run the server

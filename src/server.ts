@@ -5,34 +5,22 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import {
-  getTechUpdateTool,
-  listTechTopicsTool,
-  searchEmergentSignalsTool,
-  searchEdgeCommunitiesTool,
-  findSimilarPagesTool,
-  fetchPageContentsTool,
-} from "./tools/index.js";
-import {
-  TechUpdateArgs,
-  SearchEmergentSignalsArgs,
-  SearchEdgeCommunitiesArgs,
-  FindSimilarPagesArgs,
-  FetchPageContentsArgs,
-} from "./types.js";
 
 /**
- * Main server class for Avalogica Consumer Needs MCP integration
- * @class ConsumerNeedsServer
+ * Main server class for Avalogica Capture Analysis MCP integration.
+ *
+ * For now, this MCP server exposes no tools. The product-facing functionality
+ * will be the HTTP endpoints (e.g., /v1/captures:*). MCP tools can be added later
+ * for operator workflows (re-run analysis, debug features, etc.).
  */
-export class ConsumerNeedsServer {
+export class CaptureAnalysisServer {
   private server: Server;
 
   constructor() {
     this.server = new Server(
       {
-        name: 'avalogica-consumer-needs',
-        version: '0.2.0',
+        name: 'avalogica-capture-analysis',
+        version: '0.1.0',
       },
       {
         capabilities: {
@@ -46,125 +34,30 @@ export class ConsumerNeedsServer {
   }
 
   /**
-   * Registers all MCP tool handlers for the Avalogica Consumer Needs MCP server.
+   * Registers MCP handlers.
    * @private
    */
   private setupHandlers(): void {
     // ---- List Available Tools ----
+    // Stub: no MCP tools exposed yet.
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
-        listTechTopicsTool.definition,
-        getTechUpdateTool.definition,
-        searchEmergentSignalsTool.definition,
-        searchEdgeCommunitiesTool.definition,
-        findSimilarPagesTool.definition,
-        fetchPageContentsTool.definition,
-      ],
+      tools: [],
     }));
 
     // ---- Handle Tool Calls ----
+    // Stub: if a client attempts to call a tool, respond with MethodNotFound.
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      const { name } = request.params;
 
-      switch (name) {
-        case "list_tech_topics": {
-          return await listTechTopicsTool.handler({});
-        }
-
-        case "get_tech_update": {
-          if (
-            !args ||
-            typeof args !== "object" ||
-            typeof (args as any).topic !== "string" ||
-            !(args as any).topic.trim()
-          ) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Invalid or missing arguments for get_tech_update. Expected { topic: string }."
-            );
-          }
-          return await getTechUpdateTool.handler(args as unknown as TechUpdateArgs);
-        }
-
-        case "search_emergent_signals": {
-          if (
-            !args ||
-            typeof args !== "object" ||
-            typeof (args as any).query !== "string" ||
-            !(args as any).query.trim()
-          ) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Invalid or missing arguments for search_emergent_signals. Expected { query: string, numResults?: number }."
-            );
-          }
-          return await searchEmergentSignalsTool.handler(
-            args as unknown as SearchEmergentSignalsArgs
-          );
-        }
-
-        case "search_edge_communities": {
-          if (
-            !args ||
-            typeof args !== "object" ||
-            typeof (args as any).query !== "string" ||
-            !(args as any).query.trim()
-          ) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Invalid or missing arguments for search_edge_communities. Expected { query: string, numResults?: number }."
-            );
-          }
-          return await searchEdgeCommunitiesTool.handler(
-            args as unknown as SearchEdgeCommunitiesArgs
-          );
-        }
-
-        case "find_similar_pages": {
-          if (
-            !args ||
-            typeof args !== "object" ||
-            typeof (args as any).url !== "string" ||
-            !(args as any).url.trim()
-          ) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Invalid or missing arguments for find_similar_pages. Expected { url: string, numResults?: number }."
-            );
-          }
-          return await findSimilarPagesTool.handler(
-            args as unknown as FindSimilarPagesArgs
-          );
-        }
-
-        case "fetch_page_contents": {
-          if (
-            !args ||
-            typeof args !== "object" ||
-            typeof (args as any).url !== "string" ||
-            !(args as any).url.trim()
-          ) {
-            throw new McpError(
-              ErrorCode.InvalidParams,
-              "Invalid or missing arguments for fetch_page_contents. Expected { url: string, includeSubpages?: boolean }."
-            );
-          }
-          return await fetchPageContentsTool.handler(
-            args as unknown as FetchPageContentsArgs
-          );
-        }
-
-        default:
-          throw new McpError(
-            ErrorCode.MethodNotFound,
-            `Unknown tool: ${name}`
-          );
-      }
+      throw new McpError(
+        ErrorCode.MethodNotFound,
+        `No tools are currently exposed by this server. Unknown tool: ${name}`
+      );
     });
   }
 
   /**
-   * Configures error handling and graceful shutdown
+   * Configures error handling and graceful shutdown.
    * @private
    */
   private setupErrorHandling(): void {
@@ -177,7 +70,7 @@ export class ConsumerNeedsServer {
   }
 
   /**
-   * Returns the underlying MCP server instance
+   * Returns the underlying MCP server instance.
    * @returns {Server} MCP server instance
    */
   getServer(): Server {
@@ -186,15 +79,21 @@ export class ConsumerNeedsServer {
 }
 
 /**
- * Factory function for creating standalone Avalogica Consumer Needs MCP server instances.
+ * Backwards-compatible export name (template code may still import ConsumerNeedsServer).
+ * We'll remove this alias once all references are renamed.
+ */
+export { CaptureAnalysisServer as ConsumerNeedsServer };
+
+/**
+ * Factory function for creating standalone MCP server instances.
  * Used by HTTP transport for session-based connections.
  * @returns {Server} Configured MCP server instance
  */
 export function createStandaloneServer(): Server {
   const server = new Server(
     {
-      name: 'avalogica-consumer-needs-discovery',
-      version: '0.2.0',
+      name: 'avalogica-capture-analysis-session',
+      version: '0.1.0',
     },
     {
       capabilities: {
@@ -205,112 +104,17 @@ export function createStandaloneServer(): Server {
 
   // ---- List available tools ----
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-      listTechTopicsTool.definition,
-      getTechUpdateTool.definition,
-      searchEmergentSignalsTool.definition,
-      searchEdgeCommunitiesTool.definition,
-    ],
+    tools: [],
   }));
 
   // ---- Handle tool calls ----
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+    const { name } = request.params;
 
-    switch (name) {
-      case "list_tech_topics": {
-        return await listTechTopicsTool.handler({});
-      }
-
-      case "get_tech_update": {
-        if (
-          !args ||
-          typeof args !== "object" ||
-          typeof (args as any).topic !== "string" ||
-          !(args as any).topic.trim()
-        ) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            "Invalid or missing arguments for get_tech_update. Expected { topic: string }."
-          );
-        }
-        return await getTechUpdateTool.handler(args as unknown as TechUpdateArgs);
-      }
-
-      case "search_emergent_signals": {
-        if (
-          !args ||
-          typeof args !== "object" ||
-          typeof (args as any).query !== "string" ||
-          !(args as any).query.trim()
-        ) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            "Invalid or missing arguments for search_emergent_signals. Expected { query: string, numResults?: number }."
-          );
-        }
-        return await searchEmergentSignalsTool.handler(
-          args as unknown as SearchEmergentSignalsArgs
-        );
-      }
-
-      case "search_edge_communities": {
-        if (
-          !args ||
-          typeof args !== "object" ||
-          typeof (args as any).query !== "string" ||
-          !(args as any).query.trim()
-        ) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            "Invalid or missing arguments for search_edge_communities. Expected { query: string, numResults?: number }."
-          );
-        }
-        return await searchEdgeCommunitiesTool.handler(
-          args as unknown as SearchEdgeCommunitiesArgs
-        );
-      }
-
-      case "find_similar_pages": {
-        if (
-          !args ||
-          typeof args !== "object" ||
-          typeof (args as any).url !== "string" ||
-          !(args as any).url.trim()
-        ) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            "Invalid or missing arguments for find_similar_pages. Expected { url: string, numResults?: number }."
-          );
-        }
-        return await findSimilarPagesTool.handler(
-          args as unknown as FindSimilarPagesArgs
-        );
-      }
-
-      case "fetch_page_contents": {
-        if (
-          !args ||
-          typeof args !== "object" ||
-          typeof (args as any).url !== "string" ||
-          !(args as any).url.trim()
-        ) {
-          throw new McpError(
-            ErrorCode.InvalidParams,
-            "Invalid or missing arguments for fetch_page_contents. Expected { url: string, includeSubpages?: boolean }."
-          );
-        }
-        return await fetchPageContentsTool.handler(
-          args as unknown as FetchPageContentsArgs
-        );
-      }
-
-      default:
-        throw new McpError(
-          ErrorCode.MethodNotFound,
-          `Unknown tool: ${name}`
-        );
-    }
+    throw new McpError(
+      ErrorCode.MethodNotFound,
+      `No tools are currently exposed by this server. Unknown tool: ${name}`
+    );
   });
 
   return server;
