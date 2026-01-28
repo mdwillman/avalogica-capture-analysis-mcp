@@ -1,36 +1,42 @@
-# Avalogica Emergent Consumer Needs MCP
+# Avalogica Capture Analysis MCP
 
-**Version:** 0.2.0  
+**Version:** 0.1.0  
 **License:** MIT
 
-The Avalogica Emergent Consumer Needs MCP server powers Avalogica’s Emergent Consumer Needs agent. It analyzes emerging consumer signals, synthesizes market trends, and helps entrepreneurs and business owners brainstorm novel product ideas based on their capabilities and current market trajectories.
+The **Avalogica Capture Analysis MCP** service is the backend stub (and future orchestrator) for Avalogica’s iOS **New Capture** feature (voice + text). Its job is to turn a completed voice recording into a structured analysis result that the app can map directly into a `CaptureArtifact`:
+
+- `DimensionState` (EI / SN / FT / JP, plus MBTI guess + confidence)
+- a small set of `EvidenceDraft` items (dimension, leansToward, confidence, excerpt, sourceType, agentType, timestamp)
+
+In v1 (right now), this server can return a **hardcoded** `status="done"` response that matches the agreed `analysis.v1` JSON contract so the iOS app can be wired end-to-end before real transcription/acoustics/modeling are implemented.
 
 ---
 
 ## Features
 
-- **Emergent consumer needs analysis** via dedicated MCP tools.
-- **Product‑idea brainstorming** tailored to user capabilities.
-- **Signal aggregation** from emerging‑trend data sources (details coming as tools are implemented).
+- HTTP API for capture analysis (stubbed now; real pipeline later).
 - Dual transports (STDIO and HTTP) with a `/health` route for readiness checks.
-- TypeScript‑first build pipeline with strict type checking.
+- TypeScript-first build pipeline with strict type checking.
 
 ---
 
 ## Prerequisites
 
-- Node.js 18 or later  
-- An OpenAI API key (if using tools that call the OpenAI Responses API).
+- Node.js 18 or later
+
+> Note: Google Cloud integration (signed uploads, Speech-to-Text, acoustic jobs, Vertex inference) will be added later. This repo starts with a minimal stub service.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/mdwillman/avalogica-consumer-needs-mcp.git
-cd avalogica-consumer-needs-mcp
+git clone https://github.com/mdwillman/avalogica-capture-analysis-mcp.git
+cd avalogica-capture-analysis-mcp
 npm install
 ```
+
+---
 
 ## Configuration
 
@@ -40,10 +46,13 @@ Copy `.env.example` to `.env` and fill in any required values.
 cp .env.example .env
 ```
 
+Example:
+
 ```dotenv
-OPENAI_API_KEY=sk-...
-# Additional consumer‑needs data source keys will be added as tools are implemented.
-# PORT=3002
+# PORT=8080
+# LOG_LEVEL=info
+# Optional shared secret for simple request auth (recommended in non-local environments)
+# CAPTURE_API_SHARED_SECRET=change-me
 ```
 
 ---
@@ -64,80 +73,50 @@ The HTTP server exposes:
 
 ---
 
-## Tools
+## HTTP API (Capture Analysis)
 
-The Avalogica Consumer Needs MCP server now includes four Exa‑powered research tools designed to help the agent identify emerging needs, reveal weak signals, cluster similar discussions, and fetch full‑page content for deep reasoning.
+### `POST /v1/captures:init`
+Creates a capture session and returns a `captureId`.
 
-### 🔍 search_emergent_signals
-Search the wider web for early indicators of evolving consumer needs, complaints, and opportunities.  
-Ideal for broad discovery and trend scanning.
+**Response (stub example):**
 
-#### Example
 ```json
-{
-  "name": "search_emergent_signals",
-  "arguments": {
-    "query": "remote workers frustrated with current AI meeting assistants",
-    "numResults": 8
-  }
-}
+{ "captureId": "<uuid>", "status": "processing" }
 ```
 
-### 🧩 search_edge_communities
-Focuses on early‑adopter and frontier communities such as Reddit, Hacker News, GitHub, and niche forums.  
-Great for uncovering hacked‑together workflows, pain points, and “someone please build this” posts.
+### `POST /v1/captures/{captureId}:analyze`
+Runs analysis for the capture.
 
-#### Example
-```json
-{
-  "name": "search_edge_communities",
-  "arguments": {
-    "query": "founders hacking together automation tools for bookkeeping",
-    "numResults": 12
-  }
-}
-```
+In the stub implementation, this returns a hardcoded `status="done"` payload that conforms to `analysis.v1`.
 
-### 🔗 find_similar_pages
-Given a high‑signal page, this tool finds semantically similar pages across the web.  
-Useful for pattern detection, clustering problems, and identifying adjacent needs.
+### `GET /v1/captures/{captureId}`
+Fetches the latest status/result for a capture.
 
-#### Example
-```json
-{
-  "name": "find_similar_pages",
-  "arguments": {
-    "url": "https://news.ycombinator.com/item?id=12345678",
-    "numResults": 10
-  }
-}
-```
-
-### 📄 fetch_page_contents
-Fetches full cleaned text for one or more pages so the agent can analyze them deeply—summaries, pain‑point extraction, persona insights, etc.
-
-#### Example
-```json
-{
-  "name": "fetch_page_contents",
-  "arguments": {
-    "url": "https://example.com/emerging-trend-article",
-    "includeSubpages": false
-  }
-}
-```
+In the stub implementation, this returns the same hardcoded `status="done"` payload.
 
 ---
 
-More tools will be added as Avalogica expands its emergent‑needs intelligence and product‑innovation capabilities.
+## Response Contract
+
+All analysis responses are returned as structured JSON with:
+
+- `quality` metrics (duration, SNR/clipping placeholders as needed)
+- `transcript` (text + optional word timing)
+- `acoustics` (summary + optional events)
+- `inference.dimensionState` (matches the iOS `DimensionState` shape)
+- `inference.evidence[]` (directly mappable to `EvidenceDraft` / `SignalEvidenceEntity`)
+
+Contract version: `analysis.v1`.
 
 ---
 
-## Development Notes
+## Roadmap (planned)
 
-- The codebase remains ESM (`"type": "module"`).
-- `npm run build` compiles TypeScript to `dist/` and adjusts the CLI executable bit.
-- STDIO transport can be tested with the MCP Inspector: `npm run build && npm run inspector`.
+- Signed audio upload URLs (Google Cloud Storage)
+- Transcription (Google Speech-to-Text)
+- Acoustic feature extraction (batch job)
+- Hybrid inference pipeline (deterministic features + calibrated model + evidence selection)
+- Expanded per-axis analyzers and richer evidence linking
 
 ---
 

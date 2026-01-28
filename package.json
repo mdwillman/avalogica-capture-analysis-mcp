@@ -1,11 +1,11 @@
 {
-  "name": "avalogica-consumer-needs-mcp",
-  "version": "0.2.0",
-  "description": "Avalogica Consumer Needs MCP server enabling emergent consumer needs analysis and product-idea brainstorming.",
+  "name": "avalogica-capture-analysis-mcp",
+  "version": "0.1.0",
+  "description": "Avalogica Capture Analysis MCP server for the iOS New Capture feature (voice/text) — stub now, orchestrator later.",
   "private": false,
   "type": "module",
   "bin": {
-    "avalogica-consumer-needs-mcp": "./dist/index.js"
+    "avalogica-capture-analysis-mcp": "./dist/index.js"
   },
   "files": ["dist"],
   "scripts": {
@@ -13,6 +13,7 @@
     "start": "node dist/index.js --port 8080",
     "dev:stdio": "tsx src/index.ts --stdio",
     "dev:http": "tsx src/index.ts --port 8080",
+    "dev:shttp": "tsx src/index.ts --port 8080",
     "new-tool": "tsx scripts/newTool.ts",
     "prepare": "npm run build",
     "watch": "tsc --watch",
@@ -20,15 +21,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mdwillman/avalogica-consumer-needs-mcp.git"
+    "url": "https://github.com/mdwillman/avalogica-capture-analysis-mcp.git"
   },
   "keywords": [
     "mcp",
     "avalogica",
     "ai",
-    "consumer-needs",
-    "product-ideas",
-    "emergent-analysis"
+    "capture-analysis",
+    "voice",
+    "speech",
+    "personality",
+    "mbti"
   ],
   "author": {
     "name": "Marshall D. Willman",
@@ -36,9 +39,9 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mdwillman/avalogica-consumer-needs-mcp/issues"
+    "url": "https://github.com/mdwillman/avalogica-capture-analysis-mcp/issues"
   },
-  "homepage": "https://github.com/mdwillman/avalogica-consumer-needs-mcp#readme",
+  "homepage": "https://github.com/mdwillman/avalogica-capture-analysis-mcp#readme",
   "engines": {
     "node": ">=18"
   },
