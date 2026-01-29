@@ -1,12 +1,61 @@
-# Contributing to Avalogica AI News MCP
+# Contributing to Avalogica Capture Analysis MCP
 
-Thank you for improving the Avalogica AI News MCP server! This project has two supported workflows for shipping new tools:
+Thanks for contributing! This repo currently exists primarily to support the Avalogica iOS **New Personality Capture** feature by providing a backend **Capture Analysis Orchestrator**.
 
-1. **Manual checklist** — Follow [docs/add-tool-manually.md](docs/add-tool-manually.md) for the step-by-step process. The checklist covers naming conventions, server registration, typing, configuration, tests, and release hygiene.
-2. **Generator CLI** — Run `npm run new-tool -- <ToolName> "<Description>"` to scaffold a tool file, update registrations, and append type stubs. The CLI validates naming, keeps imports ESM-safe, and prints the next steps you must complete (prompt tuning, documentation, etc.). Use the `--dry-run` flag to inspect changes before writing.
+At the moment, the server ships as a **small, structured HTTP API** (plus MCP transports for internal/operator workflows). The public contract is the `analysis.v1` JSON response used by the app to populate a `CaptureArtifact`.
 
-After either approach, always:
-- Update documentation and `.env.example` if you introduce new environment variables.
-- Run `npm run build` and start the server locally (`npm run dev:stdio` or `npm run dev:http`) to verify registration.
-- Ensure fingerprints stay in responses (`[served by avalogica-ai-news-mcp]`).
-- Open a PR with a clear summary, test notes, and links to any newly added docs.
+## How to contribute (current scope)
+
+### 1) Keep the response contract stable
+
+- Any change that affects the `analysis.v1` JSON shape must be versioned (e.g., `analysis.v2`) or made strictly backwards compatible.
+- Prefer adding new optional fields over renaming/removing existing ones.
+
+### 2) Run locally
+
+```bash
+npm install
+npm run build
+npm run start
+```
+
+Smoke tests:
+
+```bash
+curl -s http://localhost:8080/health
+curl -s -X POST http://localhost:8080/v1/captures:init
+curl -s -X POST http://localhost:8080/v1/captures/TEST:analyze
+curl -s http://localhost:8080/v1/captures/TEST
+```
+
+If `CAPTURE_API_SHARED_SECRET` is set, include:
+
+```bash
+-H "X-Capture-Shared-Secret: <value>"
+```
+
+### 3) Code quality
+
+- Keep changes small and well-scoped.
+- Prefer deterministic feature extraction for explainability and calibration.
+- Avoid committing local artifacts (macOS `.DS_Store`, editor settings, etc.).
+
+### 4) Submodule workflow
+
+This repo is typically used as a git submodule under `avalogica-ai/external_mcp_servers/`.
+
+- Commit and push changes **inside this repo** first.
+- Then update and commit the submodule pointer in the parent repo.
+
+## Roadmap-friendly contributions
+
+Examples of helpful next steps:
+
+- Add request/response validation for the capture endpoints.
+- Add persistence for `captureId` status (`processing` → `done`/`error`).
+- Integrate Google Speech-to-Text (transcription) and an acoustic feature job.
+- Add hybrid inference logic (deterministic features + calibrated model) while keeping `analysis.v1` stable.
+
+---
+
+This file is intentionally short for now and can be expanded as the service matures.
