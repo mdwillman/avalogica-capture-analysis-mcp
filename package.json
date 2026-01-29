@@ -14,7 +14,6 @@
     "dev:stdio": "tsx src/index.ts --stdio",
     "dev:http": "tsx src/index.ts --port 8080",
     "dev:shttp": "tsx src/index.ts --port 8080",
-    "new-tool": "tsx scripts/newTool.ts",
     "prepare": "npm run build",
     "watch": "tsc --watch",
     "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
