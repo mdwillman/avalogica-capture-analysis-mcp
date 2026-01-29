@@ -58,11 +58,6 @@ export class CaptureAnalysisServer {
     }
 }
 /**
- * Backwards-compatible export name (template code may still import ConsumerNeedsServer).
- * We'll remove this alias once all references are renamed.
- */
-export { CaptureAnalysisServer as ConsumerNeedsServer };
-/**
  * Factory function for creating standalone MCP server instances.
  * Used by HTTP transport for session-based connections.
  * @returns {Server} Configured MCP server instance
