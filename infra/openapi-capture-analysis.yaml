@@ -1,0 +1,69 @@
+swagger: "2.0"
+info:
+  title: capture-analysis-api
+  description: Avalogica Capture Analysis API (API Gateway -> Cloud Run)
+  version: "1.0.0"
+schemes:
+  - https
+produces:
+  - application/json
+
+x-google-backend:
+  address: https://avalogica-capture-analysis-mcp-1043571869860.us-central1.run.app
+  jwt_audience: https://avalogica-capture-analysis-mcp-1043571869860.us-central1.run.app
+
+securityDefinitions:
+  firebase:
+    authorizationUrl: ""
+    flow: "implicit"
+    type: "oauth2"
+    x-google-issuer: "https://securetoken.google.com/avalogica"
+    x-google-jwks_uri: "https://www.googleapis.com/service_accounts/v1/metadata/x509/securetoken@system.gserviceaccount.com"
+    x-google-audiences: "avalogica"
+
+paths:
+  /health:
+    get:
+      # Leave open for now (easy smoke tests). Remove to lock down.
+      security: []
+      operationId: health
+      responses:
+        "200":
+          description: OK
+
+  /v1/captures:init:
+    post:
+      security:
+        - firebase: []
+      operationId: capturesInit
+      responses:
+        "200":
+          description: OK
+
+  /v1/captures/{captureId}:analyze:
+    post:
+      security:
+        - firebase: []
+      operationId: capturesAnalyze
+      parameters:
+        - name: captureId
+          in: path
+          required: true
+          type: string
+      responses:
+        "200":
+          description: OK
+
+  /v1/captures/{captureId}:
+    get:
+      security:
+        - firebase: []
+      operationId: capturesGet
+      parameters:
+        - name: captureId
+          in: path
+          required: true
+          type: string
+      responses:
+        "200":
+          description: OK
