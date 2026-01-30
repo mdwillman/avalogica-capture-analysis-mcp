@@ -1,6 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import https from 'https';
 import { createStandaloneServer } from '../server.js';
 import { Config } from '../config.js';
 
@@ -126,7 +127,7 @@ async function createCaptureAnalysisSession(
 
 /**
  * Capture Analysis: POST /v1/captures:init
- * Stub: returns a new captureId.
+ * Returns a new captureId and a signed GCS upload URL.
  */
 async function handleCapturesInit(
   _req: IncomingMessage,
@@ -139,10 +140,58 @@ async function handleCapturesInit(
   }
 
   const captureId = randomUUID();
-  writeJson(res, 200, {
-    captureId,
-    status: 'processing',
-  });
+
+  // Bucket can be supplied via env var in Cloud Run.
+  const bucket =
+    process.env.CAPTURE_AUDIO_BUCKET || (config as any).captureAudioBucket || '';
+  if (!bucket) {
+    writeJson(res, 500, {
+      error: 'Missing CAPTURE_AUDIO_BUCKET configuration',
+    });
+    return;
+  }
+
+  // Allow client to suggest contentType/extension; default to typical iOS m4a.
+  let contentType = 'audio/mp4';
+  let extension = 'm4a';
+  try {
+    const body = await readJsonBody<{ contentType?: string; extension?: string }>(_req);
+    if (body?.contentType) contentType = body.contentType;
+    if (body?.extension) extension = body.extension;
+  } catch {
+    // ignore body parse errors for init; defaults are fine
+  }
+
+  const objectPath = `captures/${captureId}/audio.${extension}`;
+
+  try {
+    const expiresInSeconds = 10 * 60; // 10 minutes
+    const { url, expiresAt } = await generateV4SignedPutUrl({
+      bucket,
+      objectPath,
+      contentType,
+      expiresInSeconds,
+    });
+
+    writeJson(res, 200, {
+      captureId,
+      status: 'initialized',
+      upload: {
+        method: 'PUT',
+        url,
+        headers: {
+          'Content-Type': contentType,
+        },
+        objectPath,
+        expiresAt,
+      },
+    });
+  } catch (err: any) {
+    writeJson(res, 500, {
+      error: 'Failed to generate upload URL',
+      details: String(err?.message || err),
+    });
+  }
 }
 
 /**
@@ -160,8 +209,235 @@ async function handleCapturesAnalyze(
     return;
   }
 
+  // Parse body for future pipeline stages (e.g., objectPath, contentType, language).
+  // For now, the stub ignores it, but parsing here helps validate client wiring.
+  try {
+    await readJsonBody<Record<string, unknown>>(req);
+  } catch {
+    // ignore
+  }
+
   const payload = buildStubDoneResponse(captureId);
   writeJson(res, 200, payload);
+}
+// --- GCS Signed URL Helper Functions ---
+
+async function readJsonBody<T>(req: IncomingMessage): Promise<T | null> {
+  return await new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    req.on('end', () => {
+      if (!chunks.length) return resolve(null);
+      const raw = Buffer.concat(chunks).toString('utf8').trim();
+      if (!raw) return resolve(null);
+      try {
+        resolve(JSON.parse(raw) as T);
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function iso8601BasicNow(): { requestTimestamp: string; datestamp: string } {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const mm = pad(d.getUTCMonth() + 1);
+  const dd = pad(d.getUTCDate());
+  const hh = pad(d.getUTCHours());
+  const mi = pad(d.getUTCMinutes());
+  const ss = pad(d.getUTCSeconds());
+  const datestamp = `${yyyy}${mm}${dd}`;
+  const requestTimestamp = `${datestamp}T${hh}${mi}${ss}Z`;
+  return { requestTimestamp, datestamp };
+}
+
+function sha256Hex(input: string): string {
+  return createHash('sha256').update(input, 'utf8').digest('hex');
+}
+
+function encodePathForGcs(objectPath: string): string {
+  // Encode each segment but keep '/' separators
+  return objectPath
+    .split('/')
+    .map((seg) => encodeURIComponent(seg))
+    .join('/');
+}
+
+function httpsJson<T>(
+  options: https.RequestOptions,
+  body?: any,
+  extraHeaders?: Record<string, string>
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          ...(extraHeaders || {}),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const code = res.statusCode || 0;
+          if (code < 200 || code >= 300) {
+            return reject(new Error(`HTTP ${code}: ${raw}`));
+          }
+          try {
+            resolve(JSON.parse(raw) as T);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+
+    req.on('error', reject);
+
+    if (body !== undefined) {
+      const payload = typeof body === 'string' ? body : JSON.stringify(body);
+      req.write(payload);
+    }
+    req.end();
+  });
+}
+
+async function fetchMetadata(path: string): Promise<string> {
+  const res = await new Promise<string>((resolve, reject) => {
+    const req = https.request(
+      {
+        host: 'metadata.google.internal',
+        path: `/computeMetadata/v1/${path}`,
+        method: 'GET',
+        headers: {
+          'Metadata-Flavor': 'Google',
+        },
+      },
+      (r) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+        r.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const code = r.statusCode || 0;
+          if (code < 200 || code >= 300) {
+            return reject(new Error(`Metadata HTTP ${code}: ${raw}`));
+          }
+          resolve(raw.trim());
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+  return res;
+}
+
+async function getAccessToken(): Promise<string> {
+  // Cloud Run provides a metadata server token for the runtime service account.
+  const raw = await fetchMetadata('instance/service-accounts/default/token');
+  const parsed = JSON.parse(raw) as { access_token: string };
+  return parsed.access_token;
+}
+
+async function getServiceAccountEmail(): Promise<string> {
+  return await fetchMetadata('instance/service-accounts/default/email');
+}
+
+async function signBlobWithIamCredentials(
+  serviceAccountEmail: string,
+  bytesToSign: Buffer
+): Promise<Buffer> {
+  const token = await getAccessToken();
+
+  const body = {
+    payload: bytesToSign.toString('base64'),
+  };
+
+  const resp = await httpsJson<{ signedBlob: string }>(
+    {
+      host: 'iamcredentials.googleapis.com',
+      path: `/v1/projects/-/serviceAccounts/${encodeURIComponent(serviceAccountEmail)}:signBlob`,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    },
+    body
+  );
+
+  return Buffer.from(resp.signedBlob, 'base64');
+}
+
+async function generateV4SignedPutUrl(args: {
+  bucket: string;
+  objectPath: string;
+  contentType: string;
+  expiresInSeconds: number;
+}): Promise<{ url: string; expiresAt: string }> {
+  const { bucket, objectPath, contentType, expiresInSeconds } = args;
+
+  const serviceAccountEmail = await getServiceAccountEmail();
+  const { requestTimestamp, datestamp } = iso8601BasicNow();
+
+  const algorithm = 'GOOG4-RSA-SHA256';
+  const host = 'storage.googleapis.com';
+  const region = 'auto';
+  const service = 'storage';
+  const scope = `${datestamp}/${region}/${service}/goog4_request`;
+
+  const credential = `${serviceAccountEmail}/${scope}`;
+
+  const signedHeaders = 'content-type;host';
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\n`;
+
+  const canonicalQuery: Record<string, string> = {
+    'X-Goog-Algorithm': algorithm,
+    'X-Goog-Credential': credential,
+    'X-Goog-Date': requestTimestamp,
+    'X-Goog-Expires': String(expiresInSeconds),
+    'X-Goog-SignedHeaders': signedHeaders,
+  };
+
+  const canonicalQueryString = Object.keys(canonicalQuery)
+    .sort()
+    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(canonicalQuery[k]!)}`)
+    .join('&');
+
+  const canonicalUri = `/${bucket}/${encodePathForGcs(objectPath)}`;
+
+  const canonicalRequest = [
+    'PUT',
+    canonicalUri,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+
+  const stringToSign = [
+    algorithm,
+    requestTimestamp,
+    scope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const signatureBytes = await signBlobWithIamCredentials(
+    serviceAccountEmail,
+    Buffer.from(stringToSign, 'utf8')
+  );
+  const signatureHex = signatureBytes.toString('hex');
+
+  const url = `https://${host}${canonicalUri}?${canonicalQueryString}&X-Goog-Signature=${signatureHex}`;
+
+  const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+  return { url, expiresAt };
 }
 
 /**
