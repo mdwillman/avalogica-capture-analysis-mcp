@@ -147,7 +147,7 @@ async function handleCapturesInit(
 
 /**
  * Capture Analysis: POST /v1/captures/{captureId}:analyze
- * Stub: returns a hardcoded analysis.v1 "done" payload.
+ * Stub: returns a hardcoded CaptureArtifact payload (dimensionState + evidence).
  */
 async function handleCapturesAnalyze(
   req: IncomingMessage,
@@ -166,7 +166,7 @@ async function handleCapturesAnalyze(
 
 /**
  * Capture Analysis: GET /v1/captures/{captureId}
- * Stub: returns the same hardcoded "done" payload.
+ * Stub: returns the same hardcoded CaptureArtifact payload (dimensionState + evidence).
  */
 async function handleCapturesGet(
   req: IncomingMessage,
@@ -208,86 +208,42 @@ function writeJson(res: ServerResponse, statusCode: number, body: unknown): void
 function buildStubDoneResponse(captureId: string): unknown {
   const now = new Date().toISOString();
 
+  // This shape is intentionally the stable iOS contract:
+  // CaptureArtifact -> { dimensionState, evidence }
   return {
-    captureId,
-    status: 'done',
-    version: 'analysis.v1',
-    createdAt: now,
-    input: {
-      sourceType: 'audio',
-      promptId: 'stub',
-      language: 'en-US',
-      audio: {
-        durationMs: 12000,
-        sampleRateHz: 48000,
-        channels: 1,
-        codec: 'aac',
-        container: 'm4a',
+    dimensionState: {
+      axes: {
+        EI: { leansToward: 'E', strength: 0.22, confidence: 0.58, updatedAt: now },
+        SN: { leansToward: 'N', strength: 0.18, confidence: 0.54, updatedAt: now },
+        FT: { leansToward: 'F', strength: 0.12, confidence: 0.52, updatedAt: now },
+        JP: { leansToward: 'P', strength: 0.08, confidence: 0.51, updatedAt: now },
       },
+      mbtiGuess: 'ENFP',
+      mbtiConfidence: 0.44,
+      updatedAt: now,
     },
-    quality: {
-      durationMs: 12000,
-      snrDb: 18.0,
-      clippingPercent: 0.0,
-      speechActivityRatio: 0.7,
-      transcriptConfidence: 0.9,
-      warnings: [],
-    },
-    transcript: {
-      text: 'Stub transcript: I enjoy exploring ideas and connecting with people.',
-      words: [],
-    },
-    acoustics: {
-      summary: {
-        speechRateWpm: 140.0,
-        pauseRatio: 0.2,
-        meanPitchHz: 170.0,
-        pitchIqrHz: 40.0,
-        loudnessIqrDb: 6.0,
+    evidence: [
+      {
+        dimension: 'EI',
+        leansToward: 'E',
+        confidence: 0.62,
+        excerpt: '…connecting with people…',
+        sourceType: 'audio',
+        sourceSessionID: captureId,
+        agentType: 'hybrid.v1',
+        timestamp: now,
       },
-      events: [],
-    },
-    inference: {
-      dimensionState: {
-        axes: {
-          EI: { leansToward: 'E', strength: 0.22, confidence: 0.58, updatedAt: now },
-          SN: { leansToward: 'N', strength: 0.18, confidence: 0.54, updatedAt: now },
-          FT: { leansToward: 'F', strength: 0.12, confidence: 0.52, updatedAt: now },
-          JP: { leansToward: 'P', strength: 0.08, confidence: 0.51, updatedAt: now },
-        },
-        mbtiGuess: 'ENFP',
-        mbtiConfidence: 0.44,
-        updatedAt: now,
+      {
+        dimension: 'SN',
+        leansToward: 'N',
+        confidence: 0.58,
+        excerpt: '…exploring ideas…',
+        sourceType: 'audio',
+        sourceSessionID: captureId,
+        agentType: 'hybrid.v1',
+        timestamp: now,
       },
-      evidence: [
-        {
-          dimension: 'EI',
-          leansToward: 'E',
-          confidence: 0.62,
-          excerpt: '…connecting with people…',
-          sourceType: 'audio',
-          sourceSessionID: captureId,
-          agentType: 'hybrid.v1',
-          timestamp: now,
-        },
-        {
-          dimension: 'SN',
-          leansToward: 'N',
-          confidence: 0.58,
-          excerpt: '…exploring ideas…',
-          sourceType: 'audio',
-          sourceSessionID: captureId,
-          agentType: 'hybrid.v1',
-          timestamp: now,
-        },
-      ],
-      notes: [
-        {
-          type: 'quality',
-          message: 'Stub response. Real transcription/acoustic extraction will be added in a future step.',
-        },
-      ],
-    },
+    ],
   };
 }
 
