@@ -218,9 +218,21 @@ async function handleCapturesAnalyze(
     return;
   }
 
-  let body: { objectPath?: string; contentType?: string; language?: string } | null = null;
+  let body: {
+    objectPath?: string;
+    contentType?: string;
+    language?: string;
+    model?: string;
+    includeTranscript?: boolean;
+  } | null = null;
   try {
-    body = await readJsonBody<{ objectPath?: string; contentType?: string; language?: string }>(req);
+    body = await readJsonBody<{
+      objectPath?: string;
+      contentType?: string;
+      language?: string;
+      model?: string;
+      includeTranscript?: boolean;
+    }>(req);
   } catch (e: any) {
     writeJson(res, 400, { error: 'Invalid JSON body', details: String(e?.message || e) });
     return;
@@ -245,8 +257,98 @@ async function handleCapturesAnalyze(
     return;
   }
 
-  const payload = buildStubDoneResponse(captureId);
+  // --- Sync transcription (Speech-to-Text v2) ---
+  const language = (body?.language || 'en-US').trim() || 'en-US';
+  const model = (body?.model || process.env.SPEECH_MODEL || 'latest_long').trim() || 'latest_long';
+
+  let transcript: string | null = null;
+  try {
+    transcript = await speechV2RecognizeGcs({
+      gcsUri: `gs://${bucket}/${objectPath}`,
+      languageCode: language,
+      model,
+    });
+    console.log(`[transcribe] captureId=${captureId} lang=${language} model=${model} chars=${transcript.length}`);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    console.error(`[transcribe] FAILED captureId=${captureId} lang=${language} model=${model}: ${msg}`);
+    writeJson(res, 500, { error: 'Transcription failed', details: msg });
+    return;
+  }
+
+  const payload: any = buildStubDoneResponse(captureId);
+  // Keep the stable iOS contract. Include transcript only when requested.
+  if (body?.includeTranscript || process.env.INCLUDE_TRANSCRIPT_DEBUG === 'true') {
+    payload.debug = {
+      transcript,
+      language,
+      model,
+      gcsUri: `gs://${bucket}/${objectPath}`,
+    };
+  }
   writeJson(res, 200, payload);
+}
+async function getProjectId(): Promise<string> {
+  // Available on Cloud Run metadata server.
+  return await fetchMetadata('project/project-id');
+}
+
+type SpeechV2RecognizeResponse = {
+  results?: Array<{
+    alternatives?: Array<{ transcript?: string }>;
+  }>;
+  metadata?: { requestId?: string; totalBilledDuration?: string };
+};
+
+async function speechV2RecognizeGcs(args: {
+  gcsUri: string;
+  languageCode: string;
+  model: string;
+}): Promise<string> {
+  const token = await getAccessToken();
+  const projectId = await getProjectId();
+
+  // Use implicit recognizer '_' and global location.
+  const path = `/v2/projects/${encodeURIComponent(projectId)}/locations/global/recognizers/_:recognize`;
+
+  // RecognitionConfig per v2 REST JSON representation.
+  // Uses AutoDecodingConfig so the API infers container/codec when possible.
+  const body = {
+    config: {
+      autoDecodingConfig: {},
+      languageCodes: [args.languageCode],
+      model: args.model,
+      features: {
+        enableAutomaticPunctuation: true,
+      },
+    },
+    uri: args.gcsUri,
+  };
+
+  const resp = await httpsJson<SpeechV2RecognizeResponse>(
+    {
+      host: 'speech.googleapis.com',
+      path,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    },
+    body
+  );
+
+  const parts: string[] = [];
+  for (const r of resp.results || []) {
+    const t = r.alternatives?.[0]?.transcript;
+    if (t) parts.push(t);
+  }
+
+  const transcript = parts.join(' ').trim();
+  if (!transcript) {
+    throw new Error('No transcript returned from Speech-to-Text');
+  }
+  return transcript;
 }
 // --- GCS Signed URL Helper Functions ---
 
