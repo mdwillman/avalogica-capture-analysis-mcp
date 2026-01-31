@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createHash, randomUUID } from 'crypto';
 import https from 'https';
+import http from 'http';
 import { createStandaloneServer } from '../server.js';
 import { Config } from '../config.js';
 
@@ -310,7 +311,8 @@ function httpsJson<T>(
 
 async function fetchMetadata(path: string): Promise<string> {
   const res = await new Promise<string>((resolve, reject) => {
-    const req = https.request(
+    // Cloud Run metadata server is available over HTTP (port 80). HTTPS (443) will ECONNREFUSED.
+    const req = http.request(
       {
         host: 'metadata.google.internal',
         path: `/computeMetadata/v1/${path}`,
