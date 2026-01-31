@@ -197,7 +197,7 @@ async function handleCapturesInit(
 
 /**
  * Capture Analysis: POST /v1/captures/{captureId}:analyze
- * Stub: returns a hardcoded CaptureArtifact payload (dimensionState + evidence).
+ * Validates the uploaded audio object exists in GCS before returning the stub CaptureArtifact.
  */
 async function handleCapturesAnalyze(
   req: IncomingMessage,
@@ -210,12 +210,39 @@ async function handleCapturesAnalyze(
     return;
   }
 
-  // Parse body for future pipeline stages (e.g., objectPath, contentType, language).
-  // For now, the stub ignores it, but parsing here helps validate client wiring.
+  // Expect objectPath from the client (Option A: signed URL upload -> analyze by reference).
+  const bucket =
+    process.env.CAPTURE_AUDIO_BUCKET || (config as any).captureAudioBucket || '';
+  if (!bucket) {
+    writeJson(res, 500, { error: 'Missing CAPTURE_AUDIO_BUCKET configuration' });
+    return;
+  }
+
+  let body: { objectPath?: string; contentType?: string; language?: string } | null = null;
   try {
-    await readJsonBody<Record<string, unknown>>(req);
-  } catch {
-    // ignore
+    body = await readJsonBody<{ objectPath?: string; contentType?: string; language?: string }>(req);
+  } catch (e: any) {
+    writeJson(res, 400, { error: 'Invalid JSON body', details: String(e?.message || e) });
+    return;
+  }
+
+  const objectPath = (body?.objectPath || '').trim();
+  if (!objectPath) {
+    writeJson(res, 400, { error: 'Missing required field: objectPath' });
+    return;
+  }
+
+  // Validate the object exists in GCS before proceeding.
+  try {
+    await gcsGetObjectMetadata(bucket, objectPath);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.startsWith('HTTP 404:')) {
+      writeJson(res, 404, { error: 'Audio object not found in bucket', bucket, objectPath });
+      return;
+    }
+    writeJson(res, 500, { error: 'Failed to validate audio object', details: msg });
+    return;
   }
 
   const payload = buildStubDoneResponse(captureId);
@@ -340,11 +367,41 @@ async function fetchMetadata(path: string): Promise<string> {
   return res;
 }
 
+
 async function getAccessToken(): Promise<string> {
   // Cloud Run provides a metadata server token for the runtime service account.
   const raw = await fetchMetadata('instance/service-accounts/default/token');
   const parsed = JSON.parse(raw) as { access_token: string };
   return parsed.access_token;
+}
+
+// --- GCS object existence check helpers ---
+
+function encodeObjectNameForGcsJsonApi(objectPath: string): string {
+  // GCS JSON API expects the full object name URL-encoded (including '/' as %2F).
+  return encodeURIComponent(objectPath);
+}
+
+async function gcsGetObjectMetadata(
+  bucket: string,
+  objectPath: string
+): Promise<{ name: string; size?: string; contentType?: string; updated?: string }> {
+  const token = await getAccessToken();
+  const encodedName = encodeObjectNameForGcsJsonApi(objectPath);
+
+  // Limit fields to keep responses small.
+  const path = `/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodedName}?fields=name,size,contentType,updated`;
+
+  return await httpsJson<{ name: string; size?: string; contentType?: string; updated?: string }>(
+    {
+      host: 'storage.googleapis.com',
+      path,
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
 }
 
 async function getServiceAccountEmail(): Promise<string> {
