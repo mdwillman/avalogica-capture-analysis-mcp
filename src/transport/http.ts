@@ -5,6 +5,9 @@ import https from 'https';
 import http from 'http';
 import { createStandaloneServer } from '../server.js';
 import { Config } from '../config.js';
+import type { PromptId } from '../domain/index.js';
+import { getPromptSpec } from '../prompts/index.js';
+import { scoreTranscript } from '../scoring/index.js';
 
 /** Session storage for streamable HTTP connections */
 const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: any }>();
@@ -224,6 +227,7 @@ async function handleCapturesAnalyze(
     language?: string;
     model?: string;
     includeTranscript?: boolean;
+    promptId?: string;
   } | null = null;
   try {
     body = await readJsonBody<{
@@ -232,6 +236,7 @@ async function handleCapturesAnalyze(
       language?: string;
       model?: string;
       includeTranscript?: boolean;
+      promptId?: string;
     }>(req);
   } catch (e: any) {
     writeJson(res, 400, { error: 'Invalid JSON body', details: String(e?.message || e) });
@@ -276,16 +281,46 @@ async function handleCapturesAnalyze(
     return;
   }
 
-  const payload: any = buildStubDoneResponse(captureId);
-  // Keep the stable iOS contract. Include transcript only when requested.
-  if (body?.includeTranscript || process.env.INCLUDE_TRANSCRIPT_DEBUG === 'true') {
+  const includeDebug = Boolean(body?.includeTranscript) || process.env.INCLUDE_TRANSCRIPT_DEBUG === 'true';
+
+  // Optional promptId (validated against catalog when provided)
+  let promptSpec: any | undefined = undefined;
+  const promptIdRaw = (body as any)?.promptId;
+  if (typeof promptIdRaw === 'string' && promptIdRaw.trim()) {
+    const pid = promptIdRaw.trim() as PromptId;
+    try {
+      promptSpec = getPromptSpec(pid);
+    } catch (e: any) {
+      writeJson(res, 400, { error: 'Unknown promptId', promptId: pid, details: String(e?.message || e) });
+      return;
+    }
+  }
+
+  const scoring = scoreTranscript({
+    transcript,
+    prompt: promptSpec,
+    sourceType: 'audio',
+    sourceSessionID: captureId,
+    includeDebug,
+    nowIso: new Date().toISOString(),
+  });
+
+  const payload: any = {
+    dimensionState: scoring.dimensionState,
+    evidence: scoring.evidence,
+  };
+
+  // Keep debug optional. Include transcript + scoring debug when enabled.
+  if (includeDebug) {
     payload.debug = {
       transcript,
       language,
       model,
       gcsUri: `gs://${bucket}/${objectPath}`,
+      ...(scoring.debug || {}),
     };
   }
+
   writeJson(res, 200, payload);
 }
 async function getProjectId(): Promise<string> {
@@ -650,9 +685,9 @@ function buildStubDoneResponse(captureId: string): unknown {
   return {
     dimensionState: {
       axes: {
-        EI: { leansToward: 'E', strength: 0.22, confidence: 0.58, updatedAt: now },
-        SN: { leansToward: 'N', strength: 0.18, confidence: 0.54, updatedAt: now },
-        FT: { leansToward: 'F', strength: 0.12, confidence: 0.52, updatedAt: now },
+        IE: { leansToward: 'E', strength: 0.22, confidence: 0.58, updatedAt: now },
+        NS: { leansToward: 'N', strength: 0.18, confidence: 0.54, updatedAt: now },
+        TF: { leansToward: 'F', strength: 0.12, confidence: 0.52, updatedAt: now },
         JP: { leansToward: 'P', strength: 0.08, confidence: 0.51, updatedAt: now },
       },
       mbtiGuess: 'ENFP',
@@ -661,7 +696,7 @@ function buildStubDoneResponse(captureId: string): unknown {
     },
     evidence: [
       {
-        dimension: 'EI',
+        dimension: 'IE',
         leansToward: 'E',
         confidence: 0.62,
         excerpt: '…connecting with people…',
@@ -671,7 +706,7 @@ function buildStubDoneResponse(captureId: string): unknown {
         timestamp: now,
       },
       {
-        dimension: 'SN',
+        dimension: 'NS',
         leansToward: 'N',
         confidence: 0.58,
         excerpt: '…exploring ideas…',
