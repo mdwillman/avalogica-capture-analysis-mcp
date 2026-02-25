@@ -1,6 +1,7 @@
 import type { PromptSpec, DimensionId } from "../domain/index.js";
 import { SUB_AXIS_ORDER } from "../domain/index.js";
 import type { ScoringResult, SubAxisScore } from "./types.js";
+import { scoreIEGroupSizePreference, scoreIEInitiatingConversation, scoreIEFamiliarityVsNovelty, scoreIESpotlightVsBackground, scoreIESpeakingPace } from "./semantic/rules/ie.js";
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
@@ -14,195 +15,6 @@ function makeNeutralSubAxis(subAxisId: string): SubAxisScore {
     cues: [],
   };
 }
-
-function scoreIEGroupSizePreference(transcriptRaw: string): {
-  score01: number;
-  confidence01: number;
-  cues: any[];
-} {
-  const t = (transcriptRaw || "").toLowerCase();
-
-  // Keywords for each pole
-  const crowd = [
-    "crowd", "crowds", "packed", "party", "room full", "everyone", "big group", "large group",
-    "strangers", "communal", "group", "conference", "network", "mixer",
-  ];
-  const intimate = [
-    "quiet", "corner", "one-on-one", "1:1", "one on one", "two", "trusted", "close", "intimate",
-    "small group", "few people", "private", "alone", "one person",
-  ];
-
-  // Simple “choice” markers (don’t treat as valence; just increases confidence)
-  const choice = ["prefer", "rather", "choose", "pick", "go with", "would go", "i'd go", "i would go", "i want", "i'd pick"];
-
-  // Optional valence markers (very lightweight)
-  const positive = ["love", "like", "enjoy", "thrives", "energ", "excited"]; // energ* covers energy/energized
-  const negative = ["hate", "dread", "avoid", "overwhelm", "too much", "drain", "anxious", "stress", "uncomfortable"];
-
-  const countHits = (terms: string[]): number =>
-    terms.reduce((acc, term) => (t.includes(term) ? acc + 1 : acc), 0);
-
-  const crowdHits = countHits(crowd);
-  const intimateHits = countHits(intimate);
-  const choiceHits = countHits(choice);
-  const posHits = countHits(positive);
-  const negHits = countHits(negative);
-
-  // Direction: toward crowds (highLabel) if crowd terms dominate; toward intimate (lowLabel) if intimate dominates
-  const rawDir = crowdHits - intimateHits;
-
-  // Neutral baseline
-  let score01 = 0.5;
-
-  // Convert direction to delta (cap to avoid overclaiming)
-  const dirStrength = Math.max(-3, Math.min(3, rawDir));
-  let delta = dirStrength * 0.08; // max ~0.24
-
-  // Choice language boosts confidence + slightly boosts delta (they’re committing to a preference)
-  const hasChoice = choiceHits > 0;
-  if (hasChoice) delta *= 1.15;
-
-  score01 = clamp01(score01 + delta);
-
-  // Confidence: based on evidence quantity + directionality
-  const poleCueCount = crowdHits + intimateHits;
-  const directional = Math.abs(rawDir);
-
-  let confidence01 = 0.20;
-  confidence01 += Math.min(0.35, poleCueCount * 0.08);
-  confidence01 += Math.min(0.25, directional * 0.08);
-  confidence01 += hasChoice ? 0.10 : 0;
-
-  // If transcript is strongly negative overall, reduce confidence slightly (could be stress talk rather than preference)
-  if (negHits >= 2 && posHits === 0) confidence01 -= 0.05;
-
-  confidence01 = clamp01(confidence01);
-
-  const cues: any[] = [];
-  if (crowdHits > 0)
-    cues.push({
-      kind: "semantic",
-      featureId: "IE.groupSizePreference.crowd_terms",
-      weight: +0.08 * crowdHits,
-      text: "crowd terms",
-    });
-  if (intimateHits > 0)
-    cues.push({
-      kind: "semantic",
-      featureId: "IE.groupSizePreference.intimate_terms",
-      weight: -0.08 * intimateHits,
-      text: "intimacy terms",
-    });
-  if (hasChoice)
-    cues.push({
-      kind: "semantic",
-      featureId: "stance.choice_language",
-      weight: 0,
-      text: "choice/preference markers",
-    });
-
-  return { score01, confidence01, cues };
-}
-
-function scoreIEInitiatingConversation(transcriptRaw: string): {
-  score01: number;
-  confidence01: number;
-  cues: any[];
-} {
-  const t = (transcriptRaw || "").toLowerCase();
-
-  // High pole (E-leaning): breaks the ice quickly / initiates
-  const initiate = [
-    "walk up", "go up", "introduce myself", "introduce", "say hi", "say hello", "start a conversation",
-    "break the ice", "jump in", "talk to people", "chat", "make small talk", "ask their name",
-    "start talking", "strike up", "approach",
-  ];
-
-  // Low pole (I-leaning): warms up gradually / waits, watches, calibrates
-  const waitWatch = [
-    "wait", "hang back", "stay quiet", "observe", "watch", "listen", "feel it out", "read the room",
-    "warm up", "take my time", "ease in", "until invited", "let them come to me",
-    "see how it feels", "get a sense first",
-  ];
-
-  // Choice/stance markers (boost confidence; not direction)
-  const choice = [
-    "i would", "i'd", "i will", "i'll", "i tend to", "usually", "most of the time",
-    "prefer", "rather", "choose", "pick",
-  ];
-
-  // Risk-appraisal / social threat markers (boost confidence a bit, since they’re actually reasoning about initiation)
-  const riskTalk = ["awkward", "rejection", "judge", "judged", "embarrass", "bother", "intrude", "anxious", "nervous"];
-
-  const countHits = (terms: string[]): number =>
-    terms.reduce((acc, term) => (t.includes(term) ? acc + 1 : acc), 0);
-
-  const initHits = countHits(initiate);
-  const waitHits = countHits(waitWatch);
-  const choiceHits = countHits(choice);
-  const riskHits = countHits(riskTalk);
-
-  // Direction: init => highLabel (E), wait/watch => lowLabel (I)
-  const rawDir = initHits - waitHits;
-
-  // Baseline neutral
-  let score01 = 0.5;
-
-  // Cap directionality to avoid overclaiming
-  const dirStrength = Math.max(-3, Math.min(3, rawDir));
-  let delta = dirStrength * 0.08; // max ~0.24
-
-  // If they use explicit stance markers, amplify slightly
-  const hasChoice = choiceHits > 0;
-  if (hasChoice) delta *= 1.15;
-
-  score01 = clamp01(score01 + delta);
-
-  // Confidence: depends on pole cue count + directionality + explicit stance
-  const poleCueCount = initHits + waitHits;
-  const directional = Math.abs(rawDir);
-
-  let confidence01 = 0.20;
-  confidence01 += Math.min(0.35, poleCueCount * 0.08);
-  confidence01 += Math.min(0.25, directional * 0.08);
-  confidence01 += hasChoice ? 0.10 : 0;
-  confidence01 += Math.min(0.08, riskHits * 0.04);
-
-  confidence01 = clamp01(confidence01);
-
-  const cues: any[] = [];
-  if (initHits > 0)
-    cues.push({
-      kind: "semantic",
-      featureId: "IE.initiatingConversation.initiate_terms",
-      weight: +0.08 * initHits,
-      text: "initiation terms",
-    });
-  if (waitHits > 0)
-    cues.push({
-      kind: "semantic",
-      featureId: "IE.initiatingConversation.wait_watch_terms",
-      weight: -0.08 * waitHits,
-      text: "wait/watch terms",
-    });
-  if (hasChoice)
-    cues.push({
-      kind: "semantic",
-      featureId: "stance.choice_language",
-      weight: 0,
-      text: "choice/preference markers",
-    });
-  if (riskHits > 0)
-    cues.push({
-      kind: "semantic",
-      featureId: "social_risk.appraisal",
-      weight: 0,
-      text: "social risk markers",
-    });
-
-  return { score01, confidence01, cues };
-}
-
 
 /**
  * Minimal v0 scorer: returns mostly neutral scores, but keeps structure stable.
@@ -239,6 +51,30 @@ export function scoreTranscript(params: {
     } else if (dim === "IE" && sub === "initiatingConversation") {
       const r = scoreIEInitiatingConversation(params.transcript);
       debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
+    } else if (dim === "IE" && sub === "familiarityVsNovelty") {
+      const r = scoreIEFamiliarityVsNovelty(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "IE" && sub === "spotlightVsBackground") {
+      const r = scoreIESpotlightVsBackground(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "IE" && sub === "speakingPace") {
+      const r = scoreIESpeakingPace(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
     } else {
       // Fallback lightweight stance cues for other prompts (temporary)
       let delta = 0;
