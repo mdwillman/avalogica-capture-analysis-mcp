@@ -10,16 +10,16 @@ export type PromptVariant = "A" | "B" | "C";
 
 export type PromptVersion = "v1";
 
-/** Prompt phases used for building multi-step arcs (optional). */
-export type PromptPhase = 1 | 2 | 3 | 4;
+/** Canonical prompt type / phase taxonomy used across the catalog. */
+export type PromptType =
+  | "freeRecall"
+  | "openInterpretation"
+  | "microDecision"
+  | "errorDetection"
+  | "projectionContinuation";
 
-/** Elicitation style (optional; used to diversify prompt arcs). */
-export type ElicitationType =
-  | "recognition"
-  | "painRanking"
-  | "scenario"
-  | "completion"
-  | "wildCard";
+/** Optional numeric phase slot aligned to the canonical prompt taxonomy. */
+export type PromptPhase = 1 | 2 | 3 | 4 | 5;
 
 /** Optional intensity tag for sequencing / pacing. */
 export type PromptIntensity = 1 | 2 | 3 | 4 | 5;
@@ -104,8 +104,8 @@ export interface PromptSpec {
   text: string;
   /** Optional sequencing metadata (does not affect scoring buckets). */
   phase?: PromptPhase;
-  /** Optional elicitation-style tag for arc building. */
-  elicitationType?: ElicitationType;
+  /** Optional canonical prompt-type tag for this prompt. */
+  promptType?: PromptType;
   /** Optional pacing/intensity tag. */
   intensity?: PromptIntensity;
   /** Optional tags for filtering / experimentation (free-form). */
