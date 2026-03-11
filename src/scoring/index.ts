@@ -1,7 +1,38 @@
 import type { PromptSpec, DimensionId } from "../domain/index.js";
 import { SUB_AXIS_ORDER } from "../domain/index.js";
 import type { ScoringResult, SubAxisScore } from "./types.js";
-import { scoreIEGroupSizePreference, scoreIEInitiatingConversation, scoreIEFamiliarityVsNovelty, scoreIESpotlightVsBackground, scoreIESpeakingPace } from "./semantic/rules/ie.js";
+
+import { 
+  scoreIEEnergyDirection, 
+  scoreIEProcessingHabitat, 
+  scoreIEVisibilityRelationship, 
+  scoreIERestorationSignature, 
+  scoreIEConnectionEconomics 
+} from "./semantic/rules/ie.js";
+
+import {
+  scoreNSAttentionPlane,
+  scoreNSTemporalHabitat,
+  scoreNSInformationDiet,
+  scoreNSRealityRelationship,
+  scoreNSMeaningThreshold,
+} from "./semantic/rules/ns.js";
+
+import {
+  scoreTFConflictMetabolism,
+  scoreTFTruthOrientation,
+  scoreTFEvaluationReflex,
+  scoreTFDecisionSubstrate,
+  scoreTFBoundaryArchitecture,
+} from "./semantic/rules/tf.js";
+
+import {
+  scoreJPClosureDrive,
+  scoreJPStructureRelationship,
+  scoreJPCommitmentMetabolism,
+  scoreJPTemporalOrientationToPlans,
+  scoreJPCompletionRelationship,
+} from "./semantic/rules/jp.js";
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
@@ -45,30 +76,150 @@ export function scoreTranscript(params: {
     const sub = prompt.subAxisId;
     const t = params.transcript.toLowerCase();
 
-    if (dim === "IE" && sub === "groupSizePreference") {
-      const r = scoreIEGroupSizePreference(params.transcript);
+    if (dim === "IE" && sub === "energyDirection") {
+      const r = scoreIEEnergyDirection(params.transcript);
       debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-    } else if (dim === "IE" && sub === "initiatingConversation") {
-      const r = scoreIEInitiatingConversation(params.transcript);
+    } else if (dim === "IE" && sub === "processingHabitat") {
+      const r = scoreIEProcessingHabitat(params.transcript);
       debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-    } else if (dim === "IE" && sub === "familiarityVsNovelty") {
-      const r = scoreIEFamiliarityVsNovelty(params.transcript);
+    } else if (dim === "IE" && sub === "visibilityRelationship") {
+      const r = scoreIEVisibilityRelationship(params.transcript);
       debugSubAxes[dim][sub] = {
         ...debugSubAxes[dim][sub],
         score01: r.score01,
         confidence01: r.confidence01,
         cues: r.cues,
       };
-    } else if (dim === "IE" && sub === "spotlightVsBackground") {
-      const r = scoreIESpotlightVsBackground(params.transcript);
+    } else if (dim === "IE" && sub === "restorationSignature") {
+      const r = scoreIERestorationSignature(params.transcript);
       debugSubAxes[dim][sub] = {
         ...debugSubAxes[dim][sub],
         score01: r.score01,
         confidence01: r.confidence01,
         cues: r.cues,
       };
-    } else if (dim === "IE" && sub === "speakingPace") {
-      const r = scoreIESpeakingPace(params.transcript);
+    } else if (dim === "IE" && sub === "connectionEconomics") {
+      const r = scoreIEConnectionEconomics(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "NS" && sub === "attentionPlane") {
+      const r = scoreNSAttentionPlane(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "NS" && sub === "temporalHabitat") {
+      const r = scoreNSTemporalHabitat(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "NS" && sub === "informationDiet") {
+      const r = scoreNSInformationDiet(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "NS" && sub === "realityRelationship") {
+      const r = scoreNSRealityRelationship(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "NS" && sub === "meaningThreshold") {
+      const r = scoreNSMeaningThreshold(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "TF" && sub === "conflictMetabolism") {
+      const r = scoreTFConflictMetabolism(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "TF" && sub === "truthOrientation") {
+      const r = scoreTFTruthOrientation(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "TF" && sub === "evaluationReflex") {
+      const r = scoreTFEvaluationReflex(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "TF" && sub === "decisionSubstrate") {
+      const r = scoreTFDecisionSubstrate(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "TF" && sub === "boundaryArchitecture") {
+      const r = scoreTFBoundaryArchitecture(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "JP" && sub === "closureDrive") {
+      const r = scoreJPClosureDrive(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "JP" && sub === "structureRelationship") {
+      const r = scoreJPStructureRelationship(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "JP" && sub === "commitmentMetabolism") {
+      const r = scoreJPCommitmentMetabolism(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "JP" && sub === "temporalOrientationToPlans") {
+      const r = scoreJPTemporalOrientationToPlans(params.transcript);
+      debugSubAxes[dim][sub] = {
+        ...debugSubAxes[dim][sub],
+        score01: r.score01,
+        confidence01: r.confidence01,
+        cues: r.cues,
+      };
+    } else if (dim === "JP" && sub === "completionRelationship") {
+      const r = scoreJPCompletionRelationship(params.transcript);
       debugSubAxes[dim][sub] = {
         ...debugSubAxes[dim][sub],
         score01: r.score01,

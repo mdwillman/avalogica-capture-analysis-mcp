@@ -10,11 +10,11 @@ function clamp01(x: number): number {
 }
 
 /**
- * IE.groupSizePreference
+ * IE.energyDirection
  * lowLabel: Prefers intimate settings
  * highLabel: Thrives in crowds
  */
-export function scoreIEGroupSizePreference(transcriptRaw: string): {
+export function scoreIEEnergyDirection(transcriptRaw: string): {
   score01: number;
   confidence01: number;
   cues: any[];
@@ -119,14 +119,14 @@ export function scoreIEGroupSizePreference(transcriptRaw: string): {
   if (crowdHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.groupSizePreference.crowd_terms",
+      featureId: "IE.energyDirection.crowd_terms",
       weight: +0.08 * crowdHits,
       text: "crowd terms",
     });
   if (intimateHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.groupSizePreference.intimate_terms",
+      featureId: "IE.energyDirection.intimate_terms",
       weight: -0.08 * intimateHits,
       text: "intimacy terms",
     });
@@ -142,11 +142,11 @@ export function scoreIEGroupSizePreference(transcriptRaw: string): {
 }
 
 /**
- * IE.initiatingConversation
+ * IE.processingHabitat
  * lowLabel: Warms up gradually
  * highLabel: Breaks the ice quickly
  */
-export function scoreIEInitiatingConversation(transcriptRaw: string): {
+export function scoreIEProcessingHabitat(transcriptRaw: string): {
   score01: number;
   confidence01: number;
   cues: any[];
@@ -262,14 +262,14 @@ export function scoreIEInitiatingConversation(transcriptRaw: string): {
   if (effectiveInitHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.initiatingConversation.initiate_terms",
+      featureId: "IE.processingHabitat.initiate_terms",
       weight: +0.08 * effectiveInitHits,
       text: "initiation terms",
     });
   if (waitHits > 0 || negatedInitiationHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.initiatingConversation.wait_watch_terms",
+      featureId: "IE.processingHabitat.wait_watch_terms",
       weight: -0.08 * (waitHits + negatedInitiationHits),
       text: negatedInitiationHits > 0 ? "wait/watch terms + negated initiation" : "wait/watch terms",
     });
@@ -292,11 +292,11 @@ export function scoreIEInitiatingConversation(transcriptRaw: string): {
 }
 
 /**
- * IE.familiarityVsNovelty
+ * IE.visibilityRelationship
  * lowLabel: Prefers familiar company
  * highLabel: Enjoys meeting new people
  */
-export function scoreIEFamiliarityVsNovelty(transcriptRaw: string): {
+export function scoreIEVisibilityRelationship(transcriptRaw: string): {
   score01: number;
   confidence01: number;
   cues: any[];
@@ -446,14 +446,14 @@ export function scoreIEFamiliarityVsNovelty(transcriptRaw: string): {
   if (effectiveNoveltyHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.familiarityVsNovelty.novelty_terms",
+      featureId: "IE.visibilityRelationship.novelty_terms",
       weight: +0.08 * effectiveNoveltyHits,
       text: "novelty/new-people terms",
     });
   if (familiarHits > 0 || negatedNoveltyHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.familiarityVsNovelty.familiar_terms",
+      featureId: "IE.visibilityRelationship.familiar_terms",
       weight: -0.08 * (familiarHits + negatedNoveltyHits),
       text: negatedNoveltyHits > 0 ? "familiar/inner-circle terms + negated novelty" : "familiar/inner-circle terms",
     });
@@ -469,7 +469,7 @@ export function scoreIEFamiliarityVsNovelty(transcriptRaw: string): {
 }
 
 /**
- * IE.speakingPace
+ * IE.connectionEconomics
  * lowLabel: Thinks, then speaks
  * highLabel: Thinks out loud
  *
@@ -477,7 +477,7 @@ export function scoreIEFamiliarityVsNovelty(transcriptRaw: string): {
  * - "go quiet / pause / assess / decide first" => low
  * - "give orders immediately / direct as I think" => high
  */
-export function scoreIESpeakingPace(transcriptRaw: string): {
+export function scoreIEConnectionEconomics(transcriptRaw: string): {
   score01: number;
   confidence01: number;
   cues: any[];
@@ -638,35 +638,35 @@ export function scoreIESpeakingPace(transcriptRaw: string): {
   if (highPhraseHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.speakingPace.think_out_loud_phrase",
+      featureId: "IE.connectionEconomics.think_out_loud_phrase",
       weight: +0.21 * highPhraseHits,
       text: "explicit think-out-loud phrasing",
     });
   if (lowPhraseHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.speakingPace.think_then_speak_phrase",
+      featureId: "IE.connectionEconomics.think_then_speak_phrase",
       weight: -0.21 * lowPhraseHits,
       text: "explicit think-then-speak phrasing",
     });
   if (effectiveDirectHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.speakingPace.direct_as_you_think_terms",
+      featureId: "IE.connectionEconomics.direct_as_you_think_terms",
       weight: +0.14 * effectiveDirectHits,
       text: "direct/announce-immediately terms",
     });
   if (quietHits > 0 || negatedDirectHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.speakingPace.quiet_first_terms",
+      featureId: "IE.connectionEconomics.quiet_first_terms",
       weight: -0.14 * (quietHits + negatedDirectHits),
       text: negatedDirectHits > 0 ? "quiet-first terms + negated directness" : "quiet-first terms",
     });
   if (fillerHits + repairHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.speakingPace.self_repairs_fillers",
+      featureId: "IE.connectionEconomics.self_repairs_fillers",
       weight: +0.02 * Math.min(10, fillerHits + repairHits),
       text: "fillers/repairs",
     });
@@ -675,11 +675,11 @@ export function scoreIESpeakingPace(transcriptRaw: string): {
 }
 
 /**
- * IE.spotlightVsBackground
+ * IE.restorationSignature
  * lowLabel: Prefers to blend in
  * highLabel: Enjoys being seen
  */
-export function scoreIESpotlightVsBackground(transcriptRaw: string): {
+export function scoreIERestorationSignature(transcriptRaw: string): {
   score01: number;
   confidence01: number;
   cues: any[];
@@ -806,7 +806,7 @@ export function scoreIESpotlightVsBackground(transcriptRaw: string): {
   if (effectiveSpotHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.spotlightVsBackground.spotlight_terms",
+      featureId: "IE.restorationSignature.spotlight_terms",
       weight: +0.08 * effectiveSpotHits,
       text: "spotlight/visibility terms",
     });
@@ -815,7 +815,7 @@ export function scoreIESpotlightVsBackground(transcriptRaw: string): {
   if (backHits > 0 || negatedSpotlightHits > 0)
     cues.push({
       kind: "semantic",
-      featureId: "IE.spotlightVsBackground.background_terms",
+      featureId: "IE.restorationSignature.background_terms",
       weight: -0.08 * (backHits + negatedSpotlightHits),
       text: negatedSpotlightHits > 0 ? "background terms + negated spotlight" : "background/blend-in terms",
     });

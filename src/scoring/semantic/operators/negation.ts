@@ -1,5 +1,3 @@
-
-
 /**
  * Negation operator utilities.
  *
@@ -119,6 +117,27 @@ const MINIMIZERS = new Set(["hardly", "scarcely", "rarely", "seldom"]);
 // (We still keep token-window logic as primary.)
 const SCOPE_BREAK_CHARS = new Set([".", "!", "?", ";", ":"]);
 
+// Conditional clause intros. Negation under these is often justificatory ("If I don't X, Y happens"),
+// so we avoid treating it as a true polarity flip for nearby cues.
+const CONDITIONAL_INTROS = new Set(["if", "when", "unless", "assuming", "provided", "suppose"]);
+
+// Lightweight clause-break tokens that often end an "if"-condition and begin the consequent.
+// (Our tokenizer doesn't keep punctuation tokens, so we use a small token list here.)
+const CONDITIONAL_CLAUSE_BREAK_TOKENS = new Set(["then"]);
+
+function isConditionalNegation(tokens: Token[], negTokenIndex: number, effectiveFrom: number): boolean {
+  // Look back a few tokens for a conditional intro before the negation token.
+  // Stop if we cross a boundary that likely ends the condition.
+  const lookback = 5;
+  for (let i = negTokenIndex - 1; i >= effectiveFrom && i >= negTokenIndex - lookback; i--) {
+    const w = tokens[i]?.lower;
+    if (!w) continue;
+    if (CONDITIONAL_CLAUSE_BREAK_TOKENS.has(w)) break;
+    if (CONDITIONAL_INTROS.has(w)) return true;
+  }
+  return false;
+}
+
 export function normalizeText(input: string): string {
   return input
     .toLowerCase()
@@ -234,7 +253,13 @@ export function findNegationBeforeIndex(
 
   for (let i = phraseStartTokenIndex - 1; i >= effectiveFrom; i--) {
     const tok = tokens[i];
-    if (isNegationToken(tok.lower, o)) return tok;
+    if (!isNegationToken(tok.lower, o)) continue;
+
+    // Ignore conditional-negation patterns like: "if I don't ..." / "when we didn't ...".
+    // These clauses commonly serve as reasons supporting the (non-negated) action.
+    if (isConditionalNegation(tokens, i, effectiveFrom)) continue;
+
+    return tok;
   }
   return undefined;
 }
