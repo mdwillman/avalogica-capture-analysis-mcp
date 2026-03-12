@@ -180,6 +180,73 @@ const DECISION_SOLITUDE_PATTERNS = [
     /(need|want) (space|quiet|a break)/i,
     /(slip|duck) out/i,
 ];
+const THRESHOLD_TERMS = [
+    "hallway",
+    "lobby",
+    "edge",
+    "corner",
+    "doorway",
+    "threshold",
+    "perimeter",
+    "outside",
+    "side room",
+    "side-room",
+    "separate room",
+    "quiet area",
+    "buffer",
+    "entry",
+    "foyer",
+    "stairwell",
+    "balcony",
+];
+const OBSERVATIONAL_SOCIAL_PATTERNS = [
+    /there (?:is|are|was|were).*(people|crowd|group)/i,
+    /(bunch|lot|lots) of (people|them|crowds?)/i,
+    /(people|crowd) (are|were) (talking|chatting|milling)/i,
+    /watch(?:ing)? (the )?(people|crowd)/i,
+];
+const SOCIAL_PARTICIPATION_PATTERNS = [
+    /(i|we) (?:walk|head|go|went|move|moved) (?:over|in|toward).*(people|crowd|group|them)/i,
+    /(i|we) (?:join|joined|jump|jumped|mix|mixed|mingle|mingled)/i,
+    /(talk|talked|chat|chatted|laugh|laughed) (?:with|together)/i,
+    /(i|we) (?:would )?(?:start|begin) (?:talking|engaging)/i,
+    /(i|we) (?:want|wanted|like) to (?:be|hang) with (?:people|them|friends)/i,
+];
+const DECOMPRESSION_TERMS = [
+    "decompress",
+    "recharge",
+    "reset",
+    "recover",
+    "breathe",
+    "breathing room",
+    "quiet",
+    "space",
+    "rest",
+    "calm",
+    "cool down",
+    "unwind",
+    "low-key",
+    "low key",
+    "relax",
+];
+const SOCIAL_REJECTION_PATTERNS = [
+    /\bnone\b/i,
+    /\bno (?:one|people|company|crowd)\b/i,
+    /\bnobody\b/i,
+    /(?:skip|pass) (?:the )?(?:people|crowd)/i,
+    /(?:just|only) (?:me|myself)/i,
+];
+const SOCIAL_DESIRE_PATTERNS = [
+    /(want|need|love|like).*(people|company|friends|crowd)/i,
+    /(would|will) (?:invite|bring|text|call) (?:friends|people|them)/i,
+    /(need|want) (?:to be|being) around (?:others|people|everyone)/i,
+];
+const DETACHED_SCENE_PATTERNS = [
+    /it (?:just|simply) (?:looks|seems|feels)/i,
+    /it's (?:just|only) (?:a|the)? (?:scene|room)/i,
+    /(i'm|i was) just (?:watching|observing)/i,
+    /there's? just/i,
+];
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
 }
@@ -952,40 +1019,82 @@ function scoreEnergyDirectionByPromptType(transcript, promptType) {
 function scoreEnergyDirectionFreeRecall(transcriptRaw) {
     const analysis = analyzeTextForScoring(transcriptRaw || "");
     const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
-    const socialHits = countMatches(primary, SOCIAL_REFERENCE_TERMS);
+    const firstMention = firstFragment(primary);
+    const participatorySocialHits = countRegexHits(primary, SOCIAL_PARTICIPATION_PATTERNS);
+    const observationalSocialHits = countRegexHits(primary, OBSERVATIONAL_SOCIAL_PATTERNS);
     const solitudeHits = countMatches(primary, SOLITUDE_REFERENCE_TERMS);
+    const thresholdHits = countMatches(primary, THRESHOLD_TERMS);
+    const firstThresholdHits = countMatches(firstMention, THRESHOLD_TERMS) > 0 ? 1 : 0;
+    const firstParticipatory = countRegexHits(firstMention, SOCIAL_PARTICIPATION_PATTERNS) > 0 ? 1 : 0;
+    const firstObservational = countRegexHits(firstMention, OBSERVATIONAL_SOCIAL_PATTERNS) > 0 ? 1 : 0;
     const activationHits = countMatches(primary, ACTIVATION_TERMS);
     const depletionHits = countMatches(primary, DEPLETION_TERMS);
     let score = 0.5;
-    score += (socialHits - solitudeHits) * 0.08;
-    score += (activationHits - depletionHits) * 0.05;
+    score += participatorySocialHits * 0.09;
+    score -= Math.min(0.12, (thresholdHits + firstThresholdHits) * 0.05);
+    score -= Math.min(0.1, solitudeHits * 0.04);
+    score += firstParticipatory * 0.04;
+    score += firstObservational * 0.01;
+    const observationalAdjustment = Math.min(0.02, observationalSocialHits * 0.01);
+    score += observationalAdjustment;
+    let activationWeight = (activationHits - depletionHits) * 0.05;
+    if (participatorySocialHits === 0)
+        activationWeight *= 0.4;
+    score += activationWeight;
     const cues = [];
-    if (socialHits > 0) {
+    if (participatorySocialHits > 0 || firstParticipatory > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.social_density",
-            weight: +0.08 * socialHits,
-            text: "recall centers people/interaction",
+            featureId: "IE.energyDirection.freeRecall.participatory_social_reference",
+            weight: +0.09 * Math.max(1, participatorySocialHits + firstParticipatory),
+            text: "recall leans toward joining or engaging with others",
+        });
+    }
+    if (observationalSocialHits > 0 || firstObservational > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.freeRecall.observational_social_reference",
+            weight: observationalAdjustment,
+            text: "notes people from a distance / observational stance",
+        });
+    }
+    if (thresholdHits > 0 || firstThresholdHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.freeRecall.threshold_or_buffer_space_salience",
+            weight: -0.05 * (thresholdHits + firstThresholdHits),
+            text: firstThresholdHits
+                ? "first recall highlights hallway/edge space"
+                : "describes buffer / threshold areas",
         });
     }
     if (solitudeHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.solitude_density",
-            weight: -0.08 * solitudeHits,
-            text: "recall centers solitude/protection",
+            featureId: "IE.energyDirection.freeRecall.solitude_preference_language",
+            weight: -0.04 * solitudeHits,
+            text: "mentions solitude/quiet comforts",
         });
     }
-    if (activationHits > 0 || depletionHits > 0) {
-        const activationWeight = (activationHits - depletionHits) * 0.05;
+    if (activationWeight !== 0) {
         cues.push({
             kind: "semantic",
-            featureId: activationWeight >= 0 ? "IE.energyDirection.freeRecall.activation" : "IE.energyDirection.freeRecall.depletion",
+            featureId: activationWeight >= 0
+                ? "IE.energyDirection.freeRecall.interaction_seeking_language"
+                : "IE.energyDirection.freeRecall.depletion_language",
             weight: activationWeight,
-            text: activationWeight >= 0 ? "energized tone" : "depletion tone",
+            text: activationWeight >= 0 ? "energized social language" : "depletion/downshift language",
         });
     }
-    const totalSignals = socialHits + solitudeHits + activationHits + depletionHits;
+    const totalSignals = participatorySocialHits +
+        observationalSocialHits +
+        thresholdHits +
+        firstThresholdHits +
+        solitudeHits +
+        activationHits +
+        depletionHits +
+        firstParticipatory +
+        firstObservational;
     const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.28, 0.05);
     return buildEnergyDirectionScore(score, confidence, cues);
 }
@@ -1000,9 +1109,11 @@ function scoreEnergyDirectionOpenInterpretation(transcriptRaw) {
         "engage",
         "with others",
     ]);
+    const detachedSceneHits = countRegexHits(primary, DETACHED_SCENE_PATTERNS);
     let score = 0.5;
     score += (socialTone - solitudeTone) * 0.07;
     score += relationLens * 0.03;
+    score -= detachedSceneHits * 0.05;
     const cues = [];
     if (socialTone > 0) {
         cues.push({
@@ -1028,7 +1139,15 @@ function scoreEnergyDirectionOpenInterpretation(transcriptRaw) {
             text: "explicit relational framing",
         });
     }
-    const totalSignals = socialTone + solitudeTone + relationLens;
+    if (detachedSceneHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.openInterpretation.detached_scene_description",
+            weight: -0.05 * detachedSceneHits,
+            text: "describes the scene at arm's length / observationally",
+        });
+    }
+    const totalSignals = socialTone + solitudeTone + relationLens + detachedSceneHits;
     const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.27, 0.05);
     return buildEnergyDirectionScore(score, confidence, cues);
 }
@@ -1038,12 +1157,14 @@ function scoreEnergyDirectionMicroDecision(transcriptRaw) {
     const socialChoiceHits = countRegexHits(primary, DECISION_SOCIAL_PATTERNS);
     const solitudeChoiceHits = countRegexHits(primary, DECISION_SOLITUDE_PATTERNS);
     const decisiveHits = countMatches(primary, DECISIVE_LANGUAGE_TERMS);
+    const rejectPeopleHits = countRegexHits(primary, SOCIAL_REJECTION_PATTERNS);
+    const decompressionHits = countMatches(primary, DECOMPRESSION_TERMS);
+    const socialDesireHits = countRegexHits(primary, SOCIAL_DESIRE_PATTERNS);
     let score = 0.5;
     score += (socialChoiceHits - solitudeChoiceHits) * 0.18;
-    const direction = Math.sign(socialChoiceHits - solitudeChoiceHits);
-    if (direction !== 0 && decisiveHits > 0) {
-        score += direction * Math.min(0.08, decisiveHits * 0.02);
-    }
+    score -= rejectPeopleHits * 0.2;
+    score -= decompressionHits * 0.12;
+    score += socialDesireHits * 0.12;
     const cues = [];
     if (socialChoiceHits > 0) {
         cues.push({
@@ -1056,21 +1177,46 @@ function scoreEnergyDirectionMicroDecision(transcriptRaw) {
     if (solitudeChoiceHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.microDecision.choice_solitude",
+            featureId: "IE.energyDirection.microDecision.solitude_preference",
             weight: -0.18 * solitudeChoiceHits,
             text: "explicitly chooses solitude/space",
+        });
+    }
+    if (rejectPeopleHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.microDecision.explicit_social_rejection",
+            weight: -0.2 * rejectPeopleHits,
+            text: "rejects people/company (none/no one)",
+        });
+    }
+    if (decompressionHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.microDecision.decompression_language",
+            weight: -0.12 * decompressionHits,
+            text: "frames choice as decompression / recharge",
+        });
+    }
+    if (socialDesireHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.microDecision.interaction_seeking_language",
+            weight: +0.12 * socialDesireHits,
+            text: "wants company / people for energy",
         });
     }
     if (decisiveHits > 0) {
         cues.push({
             kind: "semantic",
             featureId: "stance.decisive_language",
-            weight: direction * Math.min(0.08, decisiveHits * 0.02),
-            text: "decisive/committal language",
+            weight: 0,
+            text: "decisive / committal language (confidence boost)",
         });
     }
-    const totalSignals = socialChoiceHits + solitudeChoiceHits + decisiveHits;
-    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.35, 0.07);
+    const totalSignals = socialChoiceHits + solitudeChoiceHits + rejectPeopleHits + decompressionHits + socialDesireHits;
+    let confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.33, 0.07);
+    confidence = clamp01(confidence + Math.min(0.12, decisiveHits * 0.025));
     return buildEnergyDirectionScore(score, confidence, cues);
 }
 function scoreEnergyDirectionErrorDetection(transcriptRaw) {
@@ -1086,7 +1232,7 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     if (overloadHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.overload_alert",
+            featureId: "IE.energyDirection.errorDetection.crowd_overload_language",
             weight: -0.12 * overloadHits,
             text: "flags overstimulation / too much crowd",
         });
@@ -1094,7 +1240,7 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     if (isolationHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.isolation_alert",
+            featureId: "IE.energyDirection.errorDetection.interaction_gap_language",
             weight: +0.12 * isolationHits,
             text: "flags lack of connection / empty scene",
         });
@@ -1102,7 +1248,7 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     if (boundaryHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.boundary_need",
+            featureId: "IE.energyDirection.errorDetection.boundary_need_language",
             weight: -0.02 * boundaryHits,
             text: "calls out privacy/boundary gap",
         });
@@ -1125,7 +1271,7 @@ function scoreEnergyDirectionProjectionContinuation(transcriptRaw) {
     if (socialFutureHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.projection.social_path",
+            featureId: "IE.energyDirection.projection.interaction_seeking_language",
             weight: +0.15 * socialFutureHits,
             text: "projects next steps toward people/interaction",
         });
@@ -1133,7 +1279,7 @@ function scoreEnergyDirectionProjectionContinuation(transcriptRaw) {
     if (solitudeFutureHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.projection.solitude_path",
+            featureId: "IE.energyDirection.projection.private_restoration_framing",
             weight: -0.15 * solitudeFutureHits,
             text: "projects next steps toward solitude/retreat",
         });
@@ -1142,7 +1288,9 @@ function scoreEnergyDirectionProjectionContinuation(transcriptRaw) {
         const activationWeight = (activationHits - depletionHits) * 0.04;
         cues.push({
             kind: "semantic",
-            featureId: activationWeight >= 0 ? "IE.energyDirection.projection.activation" : "IE.energyDirection.projection.depletion",
+            featureId: activationWeight >= 0
+                ? "IE.energyDirection.projection.momentum_language"
+                : "IE.energyDirection.projection.depletion_language",
             weight: activationWeight,
             text: activationWeight >= 0 ? "wants to keep external energy going" : "wants to downshift",
         });
@@ -1183,4 +1331,11 @@ function countRegexHits(text, patterns) {
         }
     }
     return hits;
+}
+function firstFragment(text) {
+    const normalized = (text || "").trim();
+    if (!normalized)
+        return "";
+    const parts = normalized.split(/[\n\.!?]/).map((part) => part.trim()).filter(Boolean);
+    return parts[0] ?? normalized;
 }
