@@ -1,5 +1,5 @@
 import { SUB_AXIS_ORDER } from "../domain/index.js";
-import { scoreIEEnergyDirection, scoreIEProcessingHabitat, scoreIEVisibilityRelationship, scoreIERestorationSignature, scoreIEConnectionEconomics } from "./semantic/rules/ie.js";
+import { scoreIESubAxis } from "./semantic/rules/ie.js";
 import { scoreNSAttentionPlane, scoreNSTemporalHabitat, scoreNSInformationDiet, scoreNSRealityRelationship, scoreNSMeaningThreshold, } from "./semantic/rules/ns.js";
 import { scoreTFConflictMetabolism, scoreTFTruthOrientation, scoreTFEvaluationReflex, scoreTFDecisionSubstrate, scoreTFBoundaryArchitecture, } from "./semantic/rules/tf.js";
 import { scoreJPClosureDrive, scoreJPStructureRelationship, scoreJPCommitmentMetabolism, scoreJPTemporalOrientationToPlans, scoreJPCompletionRelationship, } from "./semantic/rules/jp.js";
@@ -33,34 +33,8 @@ export function scoreTranscript(params) {
         const dim = prompt.dimensionId;
         const sub = prompt.subAxisId;
         const t = params.transcript.toLowerCase();
-        if (dim === "IE" && sub === "energyDirection") {
-            const r = scoreIEEnergyDirection(params.transcript);
-            debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-        }
-        else if (dim === "IE" && sub === "processingHabitat") {
-            const r = scoreIEProcessingHabitat(params.transcript);
-            debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-        }
-        else if (dim === "IE" && sub === "visibilityRelationship") {
-            const r = scoreIEVisibilityRelationship(params.transcript);
-            debugSubAxes[dim][sub] = {
-                ...debugSubAxes[dim][sub],
-                score01: r.score01,
-                confidence01: r.confidence01,
-                cues: r.cues,
-            };
-        }
-        else if (dim === "IE" && sub === "restorationSignature") {
-            const r = scoreIERestorationSignature(params.transcript);
-            debugSubAxes[dim][sub] = {
-                ...debugSubAxes[dim][sub],
-                score01: r.score01,
-                confidence01: r.confidence01,
-                cues: r.cues,
-            };
-        }
-        else if (dim === "IE" && sub === "connectionEconomics") {
-            const r = scoreIEConnectionEconomics(params.transcript);
+        if (dim === "IE") {
+            const r = scoreIESubAxis({ transcript: params.transcript, prompt });
             debugSubAxes[dim][sub] = {
                 ...debugSubAxes[dim][sub],
                 score01: r.score01,

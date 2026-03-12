@@ -1,8 +1,185 @@
 // src/scoring/semantic/rules/ie.ts
 // Deterministic semantic scoring rules for IE (Social Energy) sub-axes.
 // Convention: score01=0 => lowLabel pole, score01=1 => highLabel pole.
+import { assertNever } from "../../../domain/index.js";
 import { analyzeTextForScoring } from "./utils.js";
 import { effectiveHits } from "../operators/index.js";
+const SOCIAL_REFERENCE_TERMS = [
+    "people",
+    "friends",
+    "friend",
+    "everyone",
+    "group",
+    "crowd",
+    "crowds",
+    "room full",
+    "packed",
+    "party",
+    "team",
+    "together",
+    "meetup",
+    "conference",
+    "gathering",
+    "talking",
+    "conversation",
+    "chatting",
+];
+const SOLITUDE_REFERENCE_TERMS = [
+    "alone",
+    "by myself",
+    "myself",
+    "solo",
+    "quiet",
+    "calm",
+    "private",
+    "privacy",
+    "closed door",
+    "corner",
+    "small space",
+    "escape",
+    "retreat",
+    "introvert",
+    "low key",
+    "low-key",
+    "one-on-one",
+    "1:1",
+];
+const ACTIVATION_TERMS = [
+    "energy",
+    "energized",
+    "charged",
+    "alive",
+    "buzzing",
+    "vibrant",
+    "excited",
+    "lively",
+    "lit",
+    "pumped",
+    "amped",
+    "stimulating",
+    "engaging",
+];
+const DEPLETION_TERMS = [
+    "drained",
+    "draining",
+    "tired",
+    "exhausted",
+    "overwhelmed",
+    "too much",
+    "burned",
+    "burnt",
+    "need space",
+    "need some space",
+    "tap out",
+    "shut down",
+    "withdraw",
+    "retreat",
+];
+const INTERPRETATION_SOCIAL_TERMS = [
+    "alive",
+    "buzzing",
+    "dynamic",
+    "electric",
+    "crowded",
+    "interactive",
+    "kinetic",
+    "social",
+    "magnetic",
+];
+const INTERPRETATION_SOLITUDE_TERMS = [
+    "flat",
+    "muted",
+    "quiet",
+    "still",
+    "empty",
+    "hushed",
+    "low",
+    "withdrawn",
+    "detached",
+    "draining",
+    "claustrophobic",
+];
+const ERROR_OVERLOAD_TERMS = [
+    "too loud",
+    "too many people",
+    "no private",
+    "no privacy",
+    "packed",
+    "crowded",
+    "everywhere",
+    "no space",
+    "can't breathe",
+    "overstim",
+    "over stim",
+    "over stimulated",
+];
+const ERROR_ISOLATION_TERMS = [
+    "empty room",
+    "no one",
+    "nobody",
+    "quiet",
+    "dead quiet",
+    "isolated",
+    "lonely",
+    "sterile",
+    "no energy",
+];
+const CONTINUATION_SOCIAL_TERMS = [
+    "text",
+    "call",
+    "meet",
+    "hang",
+    "meet up",
+    "invite",
+    "host",
+    "keep talking",
+    "join",
+    "stay out",
+    "go back out",
+    "walk over",
+    "go find",
+    "find people",
+    "join them",
+    "catch up",
+];
+const CONTINUATION_SOLITUDE_TERMS = [
+    "go home",
+    "head home",
+    "curl up",
+    "put on headphones",
+    "take a walk alone",
+    "sleep",
+    "journal",
+    "retreat",
+    "hide",
+    "close the door",
+    "find a corner",
+    "stay in",
+    "go back to my room",
+];
+const DECISIVE_LANGUAGE_TERMS = [
+    "definitely",
+    "absolutely",
+    "always",
+    "never",
+    "for sure",
+    "without question",
+    "no doubt",
+    "obviously",
+];
+const DECISION_SOCIAL_PATTERNS = [
+    /(prefer|choose|pick|go with|i'd rather|i would rather).*(people|crowd|friends|group|party|them)/i,
+    /(go|head|run) (out|over) (with|to) (people|friends|everyone|them)/i,
+    /(text|call|message).*(friend|people|them)/i,
+    /(join|meet|stay with) (them|everyone|people|friends)/i,
+];
+const DECISION_SOLITUDE_PATTERNS = [
+    /(prefer|choose|pick|go with|i'd rather|i would rather).*(alone|myself|quiet|privacy|silence)/i,
+    /(stay|keep|be) (alone|by myself|to myself|inside)/i,
+    /(head|go) home/i,
+    /(need|want) (space|quiet|a break)/i,
+    /(slip|duck) out/i,
+];
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
 }
@@ -715,4 +892,295 @@ export function scoreIERestorationSignature(transcriptRaw) {
             text: "choice/preference markers",
         });
     return { score01, confidence01, cues };
+}
+/**
+ * Prompt-type-aware IE scorer entry point.
+ * Transitional version: energyDirection uses the new architecture; other sub-axes delegate to the legacy rules above.
+ */
+export function scoreIESubAxis(params) {
+    const { transcript, prompt } = params;
+    if (prompt.dimensionId !== "IE") {
+        throw new Error(`scoreIESubAxis called with non-IE prompt (${prompt.dimensionId})`);
+    }
+    const subAxisId = prompt.subAxisId;
+    const promptType = prompt.promptType;
+    switch (subAxisId) {
+        case "energyDirection": {
+            if (!promptType) {
+                // Safety net: fall back to prior deterministic scorer until catalog guarantees promptType.
+                return wrapLegacySubAxisResult("energyDirection", scoreIEEnergyDirection, transcript);
+            }
+            return scoreEnergyDirectionByPromptType(transcript, promptType);
+        }
+        case "processingHabitat":
+            return wrapLegacySubAxisResult("processingHabitat", scoreIEProcessingHabitat, transcript);
+        case "visibilityRelationship":
+            return wrapLegacySubAxisResult("visibilityRelationship", scoreIEVisibilityRelationship, transcript);
+        case "connectionEconomics":
+            return wrapLegacySubAxisResult("connectionEconomics", scoreIEConnectionEconomics, transcript);
+        case "restorationSignature":
+            return wrapLegacySubAxisResult("restorationSignature", scoreIERestorationSignature, transcript);
+        default:
+            return assertNever(subAxisId, "Unhandled IE sub-axis");
+    }
+}
+function wrapLegacySubAxisResult(subAxisId, scorer, transcript) {
+    const res = scorer(transcript);
+    return {
+        subAxisId,
+        score01: res.score01,
+        confidence01: res.confidence01,
+        cues: res.cues ?? [],
+    };
+}
+function scoreEnergyDirectionByPromptType(transcript, promptType) {
+    switch (promptType) {
+        case "freeRecall":
+            return scoreEnergyDirectionFreeRecall(transcript);
+        case "openInterpretation":
+            return scoreEnergyDirectionOpenInterpretation(transcript);
+        case "microDecision":
+            return scoreEnergyDirectionMicroDecision(transcript);
+        case "errorDetection":
+            return scoreEnergyDirectionErrorDetection(transcript);
+        case "projectionContinuation":
+            return scoreEnergyDirectionProjectionContinuation(transcript);
+        default:
+            return wrapLegacySubAxisResult("energyDirection", scoreIEEnergyDirection, transcript);
+    }
+}
+function scoreEnergyDirectionFreeRecall(transcriptRaw) {
+    const analysis = analyzeTextForScoring(transcriptRaw || "");
+    const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
+    const socialHits = countMatches(primary, SOCIAL_REFERENCE_TERMS);
+    const solitudeHits = countMatches(primary, SOLITUDE_REFERENCE_TERMS);
+    const activationHits = countMatches(primary, ACTIVATION_TERMS);
+    const depletionHits = countMatches(primary, DEPLETION_TERMS);
+    let score = 0.5;
+    score += (socialHits - solitudeHits) * 0.08;
+    score += (activationHits - depletionHits) * 0.05;
+    const cues = [];
+    if (socialHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.freeRecall.social_density",
+            weight: +0.08 * socialHits,
+            text: "recall centers people/interaction",
+        });
+    }
+    if (solitudeHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.freeRecall.solitude_density",
+            weight: -0.08 * solitudeHits,
+            text: "recall centers solitude/protection",
+        });
+    }
+    if (activationHits > 0 || depletionHits > 0) {
+        const activationWeight = (activationHits - depletionHits) * 0.05;
+        cues.push({
+            kind: "semantic",
+            featureId: activationWeight >= 0 ? "IE.energyDirection.freeRecall.activation" : "IE.energyDirection.freeRecall.depletion",
+            weight: activationWeight,
+            text: activationWeight >= 0 ? "energized tone" : "depletion tone",
+        });
+    }
+    const totalSignals = socialHits + solitudeHits + activationHits + depletionHits;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.28, 0.05);
+    return buildEnergyDirectionScore(score, confidence, cues);
+}
+function scoreEnergyDirectionOpenInterpretation(transcriptRaw) {
+    const analysis = analyzeTextForScoring(transcriptRaw || "");
+    const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
+    const socialTone = countMatches(primary, INTERPRETATION_SOCIAL_TERMS) + countMatches(primary, SOCIAL_REFERENCE_TERMS);
+    const solitudeTone = countMatches(primary, INTERPRETATION_SOLITUDE_TERMS) + countMatches(primary, SOLITUDE_REFERENCE_TERMS);
+    const relationLens = countMatches(primary, [
+        "connection",
+        "interact",
+        "engage",
+        "with others",
+    ]);
+    let score = 0.5;
+    score += (socialTone - solitudeTone) * 0.07;
+    score += relationLens * 0.03;
+    const cues = [];
+    if (socialTone > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.openInterpretation.social_vibe",
+            weight: +0.07 * socialTone,
+            text: "interprets scene through social energy",
+        });
+    }
+    if (solitudeTone > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.openInterpretation.solitude_vibe",
+            weight: -0.07 * solitudeTone,
+            text: "interprets scene through solitude/withdrawal",
+        });
+    }
+    if (relationLens > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.openInterpretation.relational_focus",
+            weight: +0.03 * relationLens,
+            text: "explicit relational framing",
+        });
+    }
+    const totalSignals = socialTone + solitudeTone + relationLens;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.27, 0.05);
+    return buildEnergyDirectionScore(score, confidence, cues);
+}
+function scoreEnergyDirectionMicroDecision(transcriptRaw) {
+    const analysis = analyzeTextForScoring(transcriptRaw || "");
+    const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
+    const socialChoiceHits = countRegexHits(primary, DECISION_SOCIAL_PATTERNS);
+    const solitudeChoiceHits = countRegexHits(primary, DECISION_SOLITUDE_PATTERNS);
+    const decisiveHits = countMatches(primary, DECISIVE_LANGUAGE_TERMS);
+    let score = 0.5;
+    score += (socialChoiceHits - solitudeChoiceHits) * 0.18;
+    const direction = Math.sign(socialChoiceHits - solitudeChoiceHits);
+    if (direction !== 0 && decisiveHits > 0) {
+        score += direction * Math.min(0.08, decisiveHits * 0.02);
+    }
+    const cues = [];
+    if (socialChoiceHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.microDecision.choice_social",
+            weight: +0.18 * socialChoiceHits,
+            text: "explicitly chooses people/interaction",
+        });
+    }
+    if (solitudeChoiceHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.microDecision.choice_solitude",
+            weight: -0.18 * solitudeChoiceHits,
+            text: "explicitly chooses solitude/space",
+        });
+    }
+    if (decisiveHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "stance.decisive_language",
+            weight: direction * Math.min(0.08, decisiveHits * 0.02),
+            text: "decisive/committal language",
+        });
+    }
+    const totalSignals = socialChoiceHits + solitudeChoiceHits + decisiveHits;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.35, 0.07);
+    return buildEnergyDirectionScore(score, confidence, cues);
+}
+function scoreEnergyDirectionErrorDetection(transcriptRaw) {
+    const analysis = analyzeTextForScoring(transcriptRaw || "");
+    const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
+    const overloadHits = countMatches(primary, ERROR_OVERLOAD_TERMS);
+    const isolationHits = countMatches(primary, ERROR_ISOLATION_TERMS);
+    const boundaryHits = countMatches(primary, SOLITUDE_REFERENCE_TERMS);
+    let score = 0.5;
+    score += (isolationHits - overloadHits) * 0.12;
+    score -= boundaryHits * 0.02; // noticing lack of privacy tilts introvert
+    const cues = [];
+    if (overloadHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.errorDetection.overload_alert",
+            weight: -0.12 * overloadHits,
+            text: "flags overstimulation / too much crowd",
+        });
+    }
+    if (isolationHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.errorDetection.isolation_alert",
+            weight: +0.12 * isolationHits,
+            text: "flags lack of connection / empty scene",
+        });
+    }
+    if (boundaryHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.errorDetection.boundary_need",
+            weight: -0.02 * boundaryHits,
+            text: "calls out privacy/boundary gap",
+        });
+    }
+    const totalSignals = overloadHits + isolationHits + boundaryHits;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.30, 0.06);
+    return buildEnergyDirectionScore(score, confidence, cues);
+}
+function scoreEnergyDirectionProjectionContinuation(transcriptRaw) {
+    const analysis = analyzeTextForScoring(transcriptRaw || "");
+    const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
+    const socialFutureHits = countMatches(primary, CONTINUATION_SOCIAL_TERMS);
+    const solitudeFutureHits = countMatches(primary, CONTINUATION_SOLITUDE_TERMS);
+    const activationHits = countMatches(primary, ACTIVATION_TERMS);
+    const depletionHits = countMatches(primary, DEPLETION_TERMS);
+    let score = 0.5;
+    score += (socialFutureHits - solitudeFutureHits) * 0.15;
+    score += (activationHits - depletionHits) * 0.04;
+    const cues = [];
+    if (socialFutureHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.projection.social_path",
+            weight: +0.15 * socialFutureHits,
+            text: "projects next steps toward people/interaction",
+        });
+    }
+    if (solitudeFutureHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.projection.solitude_path",
+            weight: -0.15 * solitudeFutureHits,
+            text: "projects next steps toward solitude/retreat",
+        });
+    }
+    if (activationHits > 0 || depletionHits > 0) {
+        const activationWeight = (activationHits - depletionHits) * 0.04;
+        cues.push({
+            kind: "semantic",
+            featureId: activationWeight >= 0 ? "IE.energyDirection.projection.activation" : "IE.energyDirection.projection.depletion",
+            weight: activationWeight,
+            text: activationWeight >= 0 ? "wants to keep external energy going" : "wants to downshift",
+        });
+    }
+    const totalSignals = socialFutureHits + solitudeFutureHits + activationHits + depletionHits;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.32, 0.06);
+    return buildEnergyDirectionScore(score, confidence, cues);
+}
+function buildEnergyDirectionScore(score, confidence, cues) {
+    return {
+        subAxisId: "energyDirection",
+        score01: clamp01(score),
+        confidence01: clamp01(confidence),
+        cues,
+    };
+}
+function energyConfidence(totalSignalHits, multiplier, base = 0.25, perSignal = 0.05) {
+    const raw = base + Math.min(0.45, totalSignalHits * perSignal);
+    return clamp01(raw * multiplier);
+}
+function countMatches(text, phrases) {
+    const normalized = text || "";
+    let hits = 0;
+    for (const phrase of phrases) {
+        if (!phrase)
+            continue;
+        if (normalized.includes(phrase))
+            hits += 1;
+    }
+    return hits;
+}
+function countRegexHits(text, patterns) {
+    const normalized = text || "";
+    let hits = 0;
+    for (const pattern of patterns) {
+        if (pattern.test(normalized)) {
+            hits += 1;
+        }
+    }
+    return hits;
 }

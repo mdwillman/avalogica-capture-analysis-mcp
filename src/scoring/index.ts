@@ -2,13 +2,7 @@ import type { PromptSpec, DimensionId } from "../domain/index.js";
 import { SUB_AXIS_ORDER } from "../domain/index.js";
 import type { ScoringResult, SubAxisScore } from "./types.js";
 
-import { 
-  scoreIEEnergyDirection, 
-  scoreIEProcessingHabitat, 
-  scoreIEVisibilityRelationship, 
-  scoreIERestorationSignature, 
-  scoreIEConnectionEconomics 
-} from "./semantic/rules/ie.js";
+import { scoreIESubAxis } from "./semantic/rules/ie.js";
 
 import {
   scoreNSAttentionPlane,
@@ -76,30 +70,8 @@ export function scoreTranscript(params: {
     const sub = prompt.subAxisId;
     const t = params.transcript.toLowerCase();
 
-    if (dim === "IE" && sub === "energyDirection") {
-      const r = scoreIEEnergyDirection(params.transcript);
-      debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-    } else if (dim === "IE" && sub === "processingHabitat") {
-      const r = scoreIEProcessingHabitat(params.transcript);
-      debugSubAxes[dim][sub] = { ...debugSubAxes[dim][sub], score01: r.score01, confidence01: r.confidence01, cues: r.cues };
-    } else if (dim === "IE" && sub === "visibilityRelationship") {
-      const r = scoreIEVisibilityRelationship(params.transcript);
-      debugSubAxes[dim][sub] = {
-        ...debugSubAxes[dim][sub],
-        score01: r.score01,
-        confidence01: r.confidence01,
-        cues: r.cues,
-      };
-    } else if (dim === "IE" && sub === "restorationSignature") {
-      const r = scoreIERestorationSignature(params.transcript);
-      debugSubAxes[dim][sub] = {
-        ...debugSubAxes[dim][sub],
-        score01: r.score01,
-        confidence01: r.confidence01,
-        cues: r.cues,
-      };
-    } else if (dim === "IE" && sub === "connectionEconomics") {
-      const r = scoreIEConnectionEconomics(params.transcript);
+    if (dim === "IE") {
+      const r = scoreIESubAxis({ transcript: params.transcript, prompt });
       debugSubAxes[dim][sub] = {
         ...debugSubAxes[dim][sub],
         score01: r.score01,

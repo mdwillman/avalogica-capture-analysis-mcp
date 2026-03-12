@@ -10,6 +10,17 @@ export type PromptVariant = "A" | "B" | "C";
 
 export type PromptVersion = "v1";
 
+/** Supported prompt stimulus modalities. */
+export type StimulusModality = "text" | "image" | "audio";
+
+/** How the user is expected to respond to a prompt. */
+export type ResponseMode = "spoken" | "typed";
+
+/** Stimulus payload reference for prompt presentation. */
+export type StimulusRef =
+  | { kind: "inlineText"; text: string }
+  | { kind: "firebaseStorage"; path: string };
+
 /** Canonical prompt type / phase taxonomy used across the catalog. */
 export type PromptType =
   | "freeRecall"
@@ -101,7 +112,16 @@ export interface PromptSpec {
   subAxisId: SubAxisId;
   variant: PromptVariant;
   version: PromptVersion;
-  text: string;
+  /** User-facing instruction shown alongside or after the stimulus. */
+  instructionText?: string;
+  /** Stimulus modality used when presenting the prompt. */
+  modality?: StimulusModality;
+  /** Optional reference to the underlying text/image/audio stimulus. */
+  stimulusRef?: StimulusRef;
+  /** Optional exposure duration in milliseconds for timed presentation. */
+  exposureMs?: number;
+  /** How the user is expected to answer this prompt. */
+  responseMode?: ResponseMode;
   /** Optional sequencing metadata (does not affect scoring buckets). */
   phase?: PromptPhase;
   /** Optional canonical prompt-type tag for this prompt. */
