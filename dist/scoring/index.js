@@ -3,6 +3,10 @@ import { scoreIESubAxis } from "./semantic/rules/ie.js";
 import { scoreNSAttentionPlane, scoreNSTemporalHabitat, scoreNSInformationDiet, scoreNSRealityRelationship, scoreNSMeaningThreshold, } from "./semantic/rules/ns.js";
 import { scoreTFConflictMetabolism, scoreTFTruthOrientation, scoreTFEvaluationReflex, scoreTFDecisionSubstrate, scoreTFBoundaryArchitecture, } from "./semantic/rules/tf.js";
 import { scoreJPClosureDrive, scoreJPStructureRelationship, scoreJPCommitmentMetabolism, scoreJPTemporalOrientationToPlans, scoreJPCompletionRelationship, } from "./semantic/rules/jp.js";
+import { deriveTFSemanticEvidence } from "./semantic/tfSemanticEvidence.js";
+import { deriveIESemanticEvidence } from "./semantic/ieSemanticEvidence.js";
+import { deriveJPSemanticEvidence } from "./semantic/jpSemanticEvidence.js";
+import { deriveNSSemanticEvidence } from "./semantic/nsSemanticEvidence.js";
 function clamp01(x) {
     return Math.max(0, Math.min(1, x));
 }
@@ -200,6 +204,66 @@ export function scoreTranscript(params) {
                         },
                     ],
             };
+        }
+        if (dim === "TF" && params.semanticParse) {
+            const semanticEvidence = deriveTFSemanticEvidence({
+                promptId: prompt.id,
+                semanticParse: params.semanticParse,
+            });
+            if (semanticEvidence) {
+                const current = debugSubAxes[dim][sub];
+                debugSubAxes[dim][sub] = {
+                    ...current,
+                    score01: clamp01(current.score01 + semanticEvidence.delta),
+                    confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+                    cues: [...current.cues, ...semanticEvidence.cues],
+                };
+            }
+        }
+        if (dim === "IE" && params.semanticParse) {
+            const semanticEvidence = deriveIESemanticEvidence({
+                promptId: prompt.id,
+                semanticParse: params.semanticParse,
+            });
+            if (semanticEvidence) {
+                const current = debugSubAxes[dim][sub];
+                debugSubAxes[dim][sub] = {
+                    ...current,
+                    score01: clamp01(current.score01 + semanticEvidence.delta),
+                    confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+                    cues: [...current.cues, ...semanticEvidence.cues],
+                };
+            }
+        }
+        if (dim === "NS" && params.semanticParse) {
+            const semanticEvidence = deriveNSSemanticEvidence({
+                promptId: prompt.id,
+                semanticParse: params.semanticParse,
+            });
+            if (semanticEvidence) {
+                const current = debugSubAxes[dim][sub];
+                debugSubAxes[dim][sub] = {
+                    ...current,
+                    score01: clamp01(current.score01 + semanticEvidence.delta),
+                    confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+                    cues: [...current.cues, ...semanticEvidence.cues],
+                };
+            }
+        }
+        if (dim === "JP" && params.semanticParse) {
+            const semanticEvidence = deriveJPSemanticEvidence({
+                promptId: prompt.id,
+                semanticParse: params.semanticParse,
+            });
+            if (semanticEvidence) {
+                const current = debugSubAxes[dim][sub];
+                debugSubAxes[dim][sub] = {
+                    ...current,
+                    score01: clamp01(current.score01 + semanticEvidence.delta),
+                    confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+                    cues: [...current.cues, ...semanticEvidence.cues],
+                };
+            }
         }
     }
     // Aggregate per-dimension: mean of its 5 sub-axes.

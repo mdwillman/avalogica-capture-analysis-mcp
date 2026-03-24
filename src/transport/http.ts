@@ -8,6 +8,8 @@ import { Config } from '../config.js';
 import type { PromptId } from '../domain/index.js';
 import { getPromptSpec } from '../prompts/index.js';
 import { scoreTranscript } from '../scoring/index.js';
+import { runSemanticParser } from '../semantic/parserService.js';
+import type { SemanticParseResultV1 } from '../semantic/types.js';
 
 /** Session storage for streamable HTTP connections */
 const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: any }>();
@@ -296,6 +298,27 @@ async function handleCapturesAnalyze(
     }
   }
 
+  const shouldRunSemanticParser = Boolean(promptSpec && promptSpec.dimensionId === 'TF');
+  let semanticParse: SemanticParseResultV1 | undefined;
+  let semanticParserStatus: string | undefined;
+  let semanticParserError: string | undefined;
+
+  if (shouldRunSemanticParser && promptSpec) {
+    try {
+      semanticParse = await runSemanticParser({
+        transcript,
+        prompt: promptSpec,
+        captureId,
+        language,
+      });
+      semanticParserStatus = semanticParse ? semanticParse.parseStatus : "parser_unavailable";
+    } catch (err: any) {
+      semanticParserStatus = "parser_error";
+      semanticParserError = String(err?.message || err);
+      console.error(`[semantic-parser] FAILED captureId=${captureId}: ${semanticParserError}`);
+    }
+  }
+
   const scoring = scoreTranscript({
     transcript,
     prompt: promptSpec,
@@ -303,6 +326,7 @@ async function handleCapturesAnalyze(
     sourceSessionID: captureId,
     includeDebug,
     nowIso: new Date().toISOString(),
+    semanticParse,
   });
 
   const payload: any = {
@@ -318,6 +342,15 @@ async function handleCapturesAnalyze(
       model,
       gcsUri: `gs://${bucket}/${objectPath}`,
       ...(scoring.debug || {}),
+      semanticParse: semanticParse ?? null,
+      semanticParser: {
+        attempted: shouldRunSemanticParser,
+        status:
+          semanticParse?.parseStatus ??
+          semanticParserStatus ??
+          (shouldRunSemanticParser ? 'parser_unavailable' : 'not_attempted'),
+        error: semanticParserError,
+      },
     };
   }
 

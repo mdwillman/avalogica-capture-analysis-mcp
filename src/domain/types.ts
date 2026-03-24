@@ -26,7 +26,7 @@ export type PromptType =
   | "freeRecall"
   | "openInterpretation"
   | "microDecision"
-  | "errorDetection"
+  | "derailmentRecognition"
   | "projectionContinuation";
 
 /** Optional numeric phase slot aligned to the canonical prompt taxonomy. */

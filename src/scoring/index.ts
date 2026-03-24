@@ -1,6 +1,7 @@
 import type { PromptSpec, DimensionId } from "../domain/index.js";
 import { SUB_AXIS_ORDER } from "../domain/index.js";
 import type { ScoringResult, SubAxisScore } from "./types.js";
+import type { SemanticParseResultV1 } from "../semantic/types.js";
 
 import { scoreIESubAxis } from "./semantic/rules/ie.js";
 
@@ -27,6 +28,10 @@ import {
   scoreJPTemporalOrientationToPlans,
   scoreJPCompletionRelationship,
 } from "./semantic/rules/jp.js";
+import { deriveTFSemanticEvidence } from "./semantic/tfSemanticEvidence.js";
+import { deriveIESemanticEvidence } from "./semantic/ieSemanticEvidence.js";
+import { deriveJPSemanticEvidence } from "./semantic/jpSemanticEvidence.js";
+import { deriveNSSemanticEvidence } from "./semantic/nsSemanticEvidence.js";
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
@@ -52,6 +57,7 @@ export function scoreTranscript(params: {
   sourceSessionID?: string;
   includeDebug?: boolean;
   nowIso?: string;
+  semanticParse?: SemanticParseResultV1;
 }): ScoringResult {
   const nowIso = params.nowIso ?? new Date().toISOString();
   const prompt = params.prompt;
@@ -221,6 +227,70 @@ export function scoreTranscript(params: {
               },
             ],
       };
+    }
+
+    if (dim === "TF" && params.semanticParse) {
+      const semanticEvidence = deriveTFSemanticEvidence({
+        promptId: prompt.id,
+        semanticParse: params.semanticParse,
+      });
+      if (semanticEvidence) {
+        const current = debugSubAxes[dim][sub];
+        debugSubAxes[dim][sub] = {
+          ...current,
+          score01: clamp01(current.score01 + semanticEvidence.delta),
+          confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+          cues: [...current.cues, ...semanticEvidence.cues],
+        };
+      }
+    }
+
+    if (dim === "IE" && params.semanticParse) {
+      const semanticEvidence = deriveIESemanticEvidence({
+        promptId: prompt.id,
+        semanticParse: params.semanticParse,
+      });
+      if (semanticEvidence) {
+        const current = debugSubAxes[dim][sub];
+        debugSubAxes[dim][sub] = {
+          ...current,
+          score01: clamp01(current.score01 + semanticEvidence.delta),
+          confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+          cues: [...current.cues, ...semanticEvidence.cues],
+        };
+      }
+    }
+
+    if (dim === "NS" && params.semanticParse) {
+      const semanticEvidence = deriveNSSemanticEvidence({
+        promptId: prompt.id,
+        semanticParse: params.semanticParse,
+      });
+      if (semanticEvidence) {
+        const current = debugSubAxes[dim][sub];
+        debugSubAxes[dim][sub] = {
+          ...current,
+          score01: clamp01(current.score01 + semanticEvidence.delta),
+          confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+          cues: [...current.cues, ...semanticEvidence.cues],
+        };
+      }
+    }
+
+    if (dim === "JP" && params.semanticParse) {
+      const semanticEvidence = deriveJPSemanticEvidence({
+        promptId: prompt.id,
+        semanticParse: params.semanticParse,
+      });
+      if (semanticEvidence) {
+        const current = debugSubAxes[dim][sub];
+        debugSubAxes[dim][sub] = {
+          ...current,
+          score01: clamp01(current.score01 + semanticEvidence.delta),
+          confidence01: clamp01(current.confidence01 + semanticEvidence.confidenceDelta),
+          cues: [...current.cues, ...semanticEvidence.cues],
+        };
+      }
     }
   }
 

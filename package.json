@@ -7,7 +7,9 @@
   "bin": {
     "avalogica-capture-analysis-mcp": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
     "start": "node dist/index.js --port 8080",
@@ -45,6 +47,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@google/genai": "^1.46.0",
     "@modelcontextprotocol/sdk": "^1.17.3",
     "axios": "^1.11.0",
     "dotenv": "^17.2.1"

@@ -6,6 +6,7 @@ import http from 'http';
 import { createStandaloneServer } from '../server.js';
 import { getPromptSpec } from '../prompts/index.js';
 import { scoreTranscript } from '../scoring/index.js';
+import { runSemanticParser } from '../semantic/parserService.js';
 /** Session storage for streamable HTTP connections */
 const sessions = new Map();
 /**
@@ -236,6 +237,26 @@ async function handleCapturesAnalyze(req, res, config, captureId) {
             return;
         }
     }
+    const shouldRunSemanticParser = Boolean(promptSpec && promptSpec.dimensionId === 'TF');
+    let semanticParse;
+    let semanticParserStatus;
+    let semanticParserError;
+    if (shouldRunSemanticParser && promptSpec) {
+        try {
+            semanticParse = await runSemanticParser({
+                transcript,
+                prompt: promptSpec,
+                captureId,
+                language,
+            });
+            semanticParserStatus = semanticParse ? semanticParse.parseStatus : "parser_unavailable";
+        }
+        catch (err) {
+            semanticParserStatus = "parser_error";
+            semanticParserError = String(err?.message || err);
+            console.error(`[semantic-parser] FAILED captureId=${captureId}: ${semanticParserError}`);
+        }
+    }
     const scoring = scoreTranscript({
         transcript,
         prompt: promptSpec,
@@ -243,6 +264,7 @@ async function handleCapturesAnalyze(req, res, config, captureId) {
         sourceSessionID: captureId,
         includeDebug,
         nowIso: new Date().toISOString(),
+        semanticParse,
     });
     const payload = {
         dimensionState: scoring.dimensionState,
@@ -256,6 +278,14 @@ async function handleCapturesAnalyze(req, res, config, captureId) {
             model,
             gcsUri: `gs://${bucket}/${objectPath}`,
             ...(scoring.debug || {}),
+            semanticParse: semanticParse ?? null,
+            semanticParser: {
+                attempted: shouldRunSemanticParser,
+                status: semanticParse?.parseStatus ??
+                    semanticParserStatus ??
+                    (shouldRunSemanticParser ? 'parser_unavailable' : 'not_attempted'),
+                error: semanticParserError,
+            },
         };
     }
     writeJson(res, 200, payload);

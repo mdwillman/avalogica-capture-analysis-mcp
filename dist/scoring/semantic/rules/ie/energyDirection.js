@@ -1,5 +1,6 @@
 import { analyzeTextForScoring } from "../utils.js";
-import { clamp01, countMatches, countRegexHits, firstFragment } from "./shared.js";
+import { effectiveHits } from "../../operators/index.js";
+import { clamp01, countMatches, countRegexHits } from "./shared.js";
 const SOCIAL_REFERENCE_TERMS = [
     "people",
     "friends",
@@ -119,6 +120,18 @@ const ERROR_ISOLATION_TERMS = [
     "lonely",
     "sterile",
     "no energy",
+];
+const SOCIAL_EXPOSURE_PHRASES = [
+    "surrounded by people",
+    "be surrounded by people",
+    "around people",
+    "around everyone",
+    "with people",
+    "with everyone",
+    "with people the whole time",
+    "with people all weekend",
+    "with people the entire time",
+    "with people for the entire weekend",
 ];
 const CONTINUATION_SOCIAL_TERMS = [
     "text",
@@ -243,6 +256,92 @@ const DETACHED_SCENE_PATTERNS = [
     /(i'm|i was) just (?:watching|observing)/i,
     /there's? just/i,
 ];
+const FREE_RECALL_SOCIAL_TARGETS = [
+    "restless",
+    "starved",
+    "isolated",
+    "cooped-up",
+    "antsy",
+];
+const FREE_RECALL_SOLITARY_TARGETS = [
+    "taxed",
+    "burdened",
+    "overstimulated",
+    "crowded",
+    "frazzled",
+];
+const FREE_RECALL_ALL_TARGETS = [
+    ...FREE_RECALL_SOCIAL_TARGETS,
+    ...FREE_RECALL_SOLITARY_TARGETS,
+];
+function makeTargetPatterns(target) {
+    switch (target) {
+        case "cooped-up":
+            return [/\bcooped[- ]?up\b/i];
+        case "overstimulated":
+            return [/\bover\s?stimulated\b/i];
+        default:
+            return [new RegExp(`\\b${target.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "i")];
+    }
+}
+function targetCategory(target) {
+    return FREE_RECALL_SOCIAL_TARGETS.includes(target) ? "social" : "solitary";
+}
+function collectFreeRecallMatches(text) {
+    const normalized = (text || "")
+        .toLowerCase()
+        .replace(/[\n\r]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!normalized)
+        return [];
+    const seen = new Set();
+    const matchesWithIndex = [];
+    for (const target of FREE_RECALL_ALL_TARGETS) {
+        if (seen.has(target))
+            continue;
+        const patterns = makeTargetPatterns(target);
+        let earliestIndex = Number.POSITIVE_INFINITY;
+        for (const pattern of patterns) {
+            const match = normalized.match(pattern);
+            if (!match || typeof match.index !== "number")
+                continue;
+            if (match.index < earliestIndex)
+                earliestIndex = match.index;
+        }
+        if (!Number.isFinite(earliestIndex))
+            continue;
+        seen.add(target);
+        matchesWithIndex.push({
+            target,
+            category: targetCategory(target),
+            position: 0,
+            index: earliestIndex,
+        });
+    }
+    matchesWithIndex.sort((a, b) => a.index - b.index);
+    return matchesWithIndex.map(({ target, category }, idx) => ({
+        target,
+        category,
+        position: idx + 1,
+    }));
+}
+function countCategory(matches, category) {
+    return matches.filter((match) => match.category === category).length;
+}
+function countCategoryInFirstN(matches, category, n) {
+    return matches.slice(0, n).filter((match) => match.category === category).length;
+}
+function clusteringIndex(matches) {
+    if (matches.length < 2)
+        return 0;
+    let sameCategoryPairs = 0;
+    for (let i = 1; i < matches.length; i += 1) {
+        if (matches[i]?.category === matches[i - 1]?.category)
+            sameCategoryPairs += 1;
+    }
+    return sameCategoryPairs / (matches.length - 1);
+}
 export function scoreEnergyDirectionByPromptType(transcript, promptType) {
     switch (promptType) {
         case "freeRecall":
@@ -251,7 +350,7 @@ export function scoreEnergyDirectionByPromptType(transcript, promptType) {
             return scoreEnergyDirectionOpenInterpretation(transcript);
         case "microDecision":
             return scoreEnergyDirectionMicroDecision(transcript);
-        case "errorDetection":
+        case "derailmentRecognition":
             return scoreEnergyDirectionErrorDetection(transcript);
         case "projectionContinuation":
             return scoreEnergyDirectionProjectionContinuation(transcript);
@@ -262,83 +361,86 @@ export function scoreEnergyDirectionByPromptType(transcript, promptType) {
 function scoreEnergyDirectionFreeRecall(transcriptRaw) {
     const analysis = analyzeTextForScoring(transcriptRaw || "");
     const primary = (analysis.primaryText || transcriptRaw || "").toLowerCase();
-    const firstMention = firstFragment(primary);
-    const participatorySocialHits = countRegexHits(primary, SOCIAL_PARTICIPATION_PATTERNS);
-    const observationalSocialHits = countRegexHits(primary, OBSERVATIONAL_SOCIAL_PATTERNS);
-    const solitudeHits = countMatches(primary, SOLITUDE_REFERENCE_TERMS);
-    const thresholdHits = countMatches(primary, THRESHOLD_TERMS);
-    const firstThresholdHits = countMatches(firstMention, THRESHOLD_TERMS) > 0 ? 1 : 0;
-    const firstParticipatory = countRegexHits(firstMention, SOCIAL_PARTICIPATION_PATTERNS) > 0 ? 1 : 0;
-    const firstObservational = countRegexHits(firstMention, OBSERVATIONAL_SOCIAL_PATTERNS) > 0 ? 1 : 0;
-    const activationHits = countMatches(primary, ACTIVATION_TERMS);
-    const depletionHits = countMatches(primary, DEPLETION_TERMS);
+    const matches = collectFreeRecallMatches(primary);
+    const socialHits = countCategory(matches, "social");
+    const solitaryHits = countCategory(matches, "solitary");
+    const totalHits = matches.length;
+    const firstHit = matches[0] || null;
+    const earlySocialHits = countCategoryInFirstN(matches, "social", 3);
+    const earlySolitaryHits = countCategoryInFirstN(matches, "solitary", 3);
+    const directionBias = socialHits - solitaryHits;
+    const earlyBias = earlySocialHits - earlySolitaryHits;
+    const clusterRatio = clusteringIndex(matches);
+    const sameCategoryPairs = Math.max(0, Math.round(clusterRatio * Math.max(0, matches.length - 1)));
     let score = 0.5;
-    score += participatorySocialHits * 0.09;
-    score -= Math.min(0.12, (thresholdHits + firstThresholdHits) * 0.05);
-    score -= Math.min(0.1, solitudeHits * 0.04);
-    score += firstParticipatory * 0.04;
-    score += firstObservational * 0.01;
-    const observationalAdjustment = Math.min(0.02, observationalSocialHits * 0.01);
-    score += observationalAdjustment;
-    let activationWeight = (activationHits - depletionHits) * 0.05;
-    if (participatorySocialHits === 0)
-        activationWeight *= 0.4;
-    score += activationWeight;
+    score += directionBias * 0.07;
+    score += earlyBias * 0.04;
+    score += (clusterRatio - 0.5) * 0.04;
+    if (firstHit?.category === "social")
+        score += 0.04;
+    if (firstHit?.category === "solitary")
+        score -= 0.04;
+    if (totalHits === 0)
+        score = 0.5;
     const cues = [];
-    if (participatorySocialHits > 0 || firstParticipatory > 0) {
+    if (socialHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.participatory_social_reference",
-            weight: +0.09 * Math.max(1, participatorySocialHits + firstParticipatory),
-            text: "recall leans toward joining or engaging with others",
+            featureId: "IE.energyDirection.freeRecall.social_target_hits",
+            weight: socialHits * 0.07,
+            text: `recalls ${socialHits} social target term${socialHits === 1 ? "" : "s"}`,
         });
     }
-    if (observationalSocialHits > 0 || firstObservational > 0) {
+    if (solitaryHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.observational_social_reference",
-            weight: observationalAdjustment,
-            text: "notes people from a distance / observational stance",
+            featureId: "IE.energyDirection.freeRecall.solitary_target_hits",
+            weight: solitaryHits * -0.07,
+            text: `recalls ${solitaryHits} solitary target term${solitaryHits === 1 ? "" : "s"}`,
         });
     }
-    if (thresholdHits > 0 || firstThresholdHits > 0) {
+    if (firstHit) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.threshold_or_buffer_space_salience",
-            weight: -0.05 * (thresholdHits + firstThresholdHits),
-            text: firstThresholdHits
-                ? "first recall highlights hallway/edge space"
-                : "describes buffer / threshold areas",
+            featureId: firstHit.category === "social"
+                ? "IE.energyDirection.freeRecall.first_hit_social"
+                : "IE.energyDirection.freeRecall.first_hit_solitary",
+            weight: firstHit.category === "social" ? 0.04 : -0.04,
+            text: firstHit.category === "social"
+                ? `first recalled target is social (${firstHit.target})`
+                : `first recalled target is solitary (${firstHit.target})`,
         });
     }
-    if (solitudeHits > 0) {
+    if (earlyBias !== 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.freeRecall.solitude_preference_language",
-            weight: -0.04 * solitudeHits,
-            text: "mentions solitude/quiet comforts",
+            featureId: earlyBias > 0
+                ? "IE.energyDirection.freeRecall.early_social_bias"
+                : "IE.energyDirection.freeRecall.early_solitary_bias",
+            weight: earlyBias * 0.04,
+            text: earlyBias > 0
+                ? "first three recalls lean social"
+                : "first three recalls lean solitary",
         });
     }
-    if (activationWeight !== 0) {
+    if (sameCategoryPairs > 0) {
         cues.push({
             kind: "semantic",
-            featureId: activationWeight >= 0
-                ? "IE.energyDirection.freeRecall.interaction_seeking_language"
-                : "IE.energyDirection.freeRecall.depletion_language",
-            weight: activationWeight,
-            text: activationWeight >= 0 ? "energized social language" : "depletion/downshift language",
+            featureId: "IE.energyDirection.freeRecall.category_clustering",
+            weight: (clusterRatio - 0.5) * 0.04,
+            text: "recall sequence clusters by category",
         });
     }
-    const totalSignals = participatorySocialHits +
-        observationalSocialHits +
-        thresholdHits +
-        firstThresholdHits +
-        solitudeHits +
-        activationHits +
-        depletionHits +
-        firstParticipatory +
-        firstObservational;
-    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.28, 0.05);
+    if (totalHits === 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.freeRecall.no_target_recall",
+            weight: 0,
+            text: "no card target terms were recalled",
+        });
+    }
+    const totalSignals = totalHits + (firstHit ? 1 : 0) + Math.abs(earlyBias) + sameCategoryPairs;
+    const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.26, 0.05);
     return buildEnergyDirectionScore(score, confidence, cues);
 }
 function scoreEnergyDirectionOpenInterpretation(transcriptRaw) {
@@ -468,14 +570,17 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     const overloadHits = countMatches(primary, ERROR_OVERLOAD_TERMS);
     const isolationHits = countMatches(primary, ERROR_ISOLATION_TERMS);
     const boundaryHits = countMatches(primary, SOLITUDE_REFERENCE_TERMS);
+    const exposureSummary = effectiveHits(primary, SOCIAL_EXPOSURE_PHRASES);
+    const negatedExposureHits = exposureSummary.negatedHits;
     let score = 0.5;
     score += (isolationHits - overloadHits) * 0.12;
     score -= boundaryHits * 0.02;
+    score -= negatedExposureHits * 0.12;
     const cues = [];
     if (overloadHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.crowd_overload_language",
+            featureId: "IE.energyDirection.derailmentRecognition.crowd_overload_language",
             weight: -0.12 * overloadHits,
             text: "flags overstimulation / too much crowd",
         });
@@ -483,7 +588,7 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     if (isolationHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.interaction_gap_language",
+            featureId: "IE.energyDirection.derailmentRecognition.interaction_gap_language",
             weight: +0.12 * isolationHits,
             text: "flags lack of connection / empty scene",
         });
@@ -491,12 +596,20 @@ function scoreEnergyDirectionErrorDetection(transcriptRaw) {
     if (boundaryHits > 0) {
         cues.push({
             kind: "semantic",
-            featureId: "IE.energyDirection.errorDetection.boundary_need_language",
+            featureId: "IE.energyDirection.derailmentRecognition.boundary_need_language",
             weight: -0.02 * boundaryHits,
             text: "calls out privacy/boundary gap",
         });
     }
-    const totalSignals = overloadHits + isolationHits + boundaryHits;
+    if (negatedExposureHits > 0) {
+        cues.push({
+            kind: "semantic",
+            featureId: "IE.energyDirection.derailmentRecognition.negated_social_exposure",
+            weight: -0.12 * negatedExposureHits,
+            text: "rejects sustained people exposure",
+        });
+    }
+    const totalSignals = overloadHits + isolationHits + boundaryHits + negatedExposureHits;
     const confidence = energyConfidence(totalSignals, analysis.confidenceMultiplier, 0.30, 0.06);
     return buildEnergyDirectionScore(score, confidence, cues);
 }
